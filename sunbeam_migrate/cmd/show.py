@@ -24,7 +24,7 @@ def show_migration(output_format: str, migration_id: str):
     if not migration_id:
         raise click.ClickException("No migration id specified.")
 
-    migrations = api.get_migrations(uuid=migration_id)
+    migrations = api.get_migrations(uuid=migration_id, include_archived=True)
     if not migrations:
         raise click.ClickException(
             f"Could not find the specified migration: {migration_id}"
@@ -54,6 +54,7 @@ def _table_format(migration: models.Migration):
         "destination_id",
         "status",
         "error_message",
+        "archived",
     ]
 
     for field in fields:

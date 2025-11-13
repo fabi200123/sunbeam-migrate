@@ -33,6 +33,8 @@ class SunbeamMigrationManager:
         migration.save()
 
         try:
+            # TODO: save the destination id even in case of failures and consider
+            # performing cleanups.
             destination_id = handler.perform_individual_migration(resource_id)
         except Exception as ex:
             migration.status = constants.STATUS_FAILED

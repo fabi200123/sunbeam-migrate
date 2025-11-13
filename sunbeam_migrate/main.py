@@ -11,6 +11,8 @@ from sunbeam_migrate import config, log
 from sunbeam_migrate.cmd import list as list_cmd
 from sunbeam_migrate.cmd import show as show_cmd
 from sunbeam_migrate.cmd import start as start_cmd
+from sunbeam_migrate.cmd import delete as delete_cmd
+from sunbeam_migrate.cmd import restore as restore_cmd
 from sunbeam_migrate.db import api as db_api
 
 LOG = logging.getLogger()
@@ -48,6 +50,8 @@ def main():
     cli.add_command(show_cmd.show_migration)
     cli.add_command(start_cmd.start_migration)
     cli.add_command(start_cmd.start_batch_migration)
+    cli.add_command(delete_cmd.delete_migrations)
+    cli.add_command(restore_cmd.restore_migrations)
 
     cli()
 

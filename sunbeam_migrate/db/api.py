@@ -30,14 +30,46 @@ def create_tables():
 
 @session_utils.ensure_session
 def get_migrations(
-    order_by="created_at", ascending=True, session=None, **filters
+    order_by="created_at",
+    ascending=True,
+    session=None,
+    include_archived=False,
+    **filters,
 ) -> list[models.Migration]:
     """Retrieve migrations."""
     order_type = asc if ascending else desc
+    if not include_archived:
+        filters["archived"] = False
 
     return (
         session.query(models.Migration)
         .filter_by(**filters)
         .order_by(order_type(order_by))
         .all()
+    )
+
+
+@session_utils.ensure_session
+def delete_migrations(session=None, soft_delete=True, **filters):
+    """Delete migrations.
+
+    For soft deletion, we'll simply set the "archived" flag.
+    """
+    LOG.debug("Deleting migrations. Soft delete: %s, filters: %s", soft_delete, filters)
+    if soft_delete:
+        session.query(models.Migration).filter_by(**filters).update(
+            {"archived": True},
+        )
+    else:
+        session.query(models.Migration).filter_by(**filters).delete()
+
+
+@session_utils.ensure_session
+def restore_migrations(session=None, soft_delete=True, **filters):
+    """Restore soft deleted migrations."""
+    filters["archived"] = True
+
+    LOG.debug("Restoring soft deleted migrations, filters: %s", filters)
+    session.query(models.Migration).filter_by(**filters).update(
+        {"archived": False},
     )

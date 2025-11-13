@@ -106,4 +106,8 @@ $ sunbeam-migrate show 1ab1d02c-f8f6-49df-bcd5-91e374e264ff
 
 ## TODOs
 
-* `sunbeam-migrate clear` command, removing one or more entries from the db
+* Store the destination resource uuid even in case of failed migrations, if available.
+* Consider doing cleanups (can be an optional flag).
+* Add a flag to remove the source resource after successful migrations.
+* Add a command to remove the source resources after successful migrations.
+* Decide what to do with dependent resources (e.g. networks, subnets, routers)

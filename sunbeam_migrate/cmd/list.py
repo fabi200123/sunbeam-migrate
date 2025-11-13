@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import json
+import typing
 
 import click
 import prettytable
@@ -10,7 +11,12 @@ from sunbeam_migrate.db import api, models
 
 
 @click.command("list")
-@click.option("--service", help="List migrations for the specified service.")
+@click.option("--service", help="Filter by service name")
+@click.option("--resource-type", help="Filter by resource type")
+@click.option("--status", help="Filter by migration status.")
+@click.option("--source-id", help="Filter by source resource id.")
+@click.option("--archived", is_flag=True, help="Only show archived migrations.")
+@click.option("--include-archived", is_flag=True, help="Include archived migrations.")
 @click.option(
     "--format",
     "-f",
@@ -19,11 +25,29 @@ from sunbeam_migrate.db import api, models
     default="table",
     help="Set the output format.",
 )
-def list_migrations(output_format: str, service: str):
-    filters = {}
+def list_migrations(
+    output_format: str,
+    service: str,
+    resource_type: str,
+    status: str,
+    source_id: str,
+    archived: bool,
+    include_archived: bool,
+):
+    """List migrations."""
+    filters: dict[str, typing.Any] = {}
     if service:
         filters["service"] = service
-    migrations = api.get_migrations(**filters)
+    if resource_type:
+        filters["resource_type"] = resource_type
+    if status:
+        filters["status"] = status
+    if source_id:
+        filters["source_id"] = source_id
+    if archived:
+        filters["archived"] = True
+
+    migrations = api.get_migrations(include_archived=include_archived, **filters)
 
     if output_format == "table":
         _table_format(migrations)
