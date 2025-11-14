@@ -1,0 +1,53 @@
+# SPDX-FileCopyrightText: 2025 - Canonical Ltd
+# SPDX-License-Identifier: Apache-2.0
+
+from sunbeam_migrate import config
+from sunbeam_migrate.handlers import base
+
+CONF = config.get_config()
+
+
+class SecurityGroupRuleHandler(base.BaseMigrationHandler):
+    """Handle Barbican secret container migrations."""
+
+    def get_service_type(self) -> str:
+        """Get the service type for this type of resource."""
+        return "neutron"
+
+    def get_supported_resource_filters(self) -> list[str]:
+        """Get a list of supported resource filters.
+
+        These filters can be specified when initiating batch migrations.
+        """
+        return ["owner_id"]
+
+    def get_associated_resource_types(self) -> list[str]:
+        """Get a list of associated resource types.
+
+        Associated resources must be migrated first.
+        """
+        return ["security-group"]
+
+    def get_member_resource_types(self) -> list[str]:
+        """Get a list of member (contained) resource types.
+
+        The migrations can cascade to contained resources.
+        """
+        return []
+
+    def perform_individual_migration(self, resource_id: str):
+        """Migrate the specified resource.
+
+        Return the resulting resource id.
+        """
+        raise NotImplementedError()
+
+    def get_source_resource_ids(self, resource_filters: dict[str, str]) -> list[str]:
+        """Returns a list of resource ids based on the specified filters.
+
+        Raises an exception if any of the filters are unsupported.
+        """
+        raise NotImplementedError()
+
+    def _delete_resource(self, resource_id: str, openstack_session):
+        raise NotImplementedError()

@@ -7,15 +7,13 @@ import os
 import openstack
 from openstack import exceptions as openstack_exc
 
-from sunbeam_migrate import config, exception
+from sunbeam_migrate import config, constants, exception
 
 CONF = config.get_config()
 
 
 class BaseMigrationHandler(abc.ABC):
     """Base migration class."""
-
-    _SUPPORTED_RESOURCE_FILTERS: list[str] = []
 
     @abc.abstractmethod
     def get_service_type(self) -> str:
@@ -48,6 +46,57 @@ class BaseMigrationHandler(abc.ABC):
 
     def _delete_resource(self, resource_id: str, openstack_session):
         raise NotImplementedError()
+
+    def get_member_resource_types(self) -> list[str]:
+        """Get a list of member (contained) resource types.
+
+        The migrations can cascade to contained resources.
+
+        Examples:
+        * network -> subnet
+        * security group -> security group rule
+        * object-container -> object
+        """
+        return []
+
+    def get_member_resources(self) -> list[tuple[str, str]]:
+        """Get a list of member resources.
+
+        Each entry will be a tuple containing the resource type and
+        the resource id.
+        """
+        return []
+
+    def get_associated_resource_types(self) -> list[str]:
+        """Get a list of associated resource types.
+
+        Associated resources must be migrated first.
+
+        Examples:
+        * secret-container -> secret,
+        * instance -> volume
+        * instance -> port
+        """
+        return []
+
+    def get_associated_resources(self) -> list[tuple[str, str]]:
+        """Get a list of associated resources.
+
+        Each entry will be a tuple containing the resource type and
+        the resource id.
+        """
+        return []
+
+    def get_supported_resource_filters(self) -> list[str]:
+        """Get a list of supported resource filters.
+
+        These filters can be specified when initiating batch migrations.
+        """
+        return []
+
+    def get_implementation_status(self) -> str:
+        """Describe the implementation status."""
+        return constants.IMPL_PLACEHOLDER
 
     def _get_openstack_session(self, cloud_name: str):
         if not CONF.cloud_config_file:
@@ -105,8 +154,8 @@ class BaseMigrationHandler(abc.ABC):
 
     def _validate_resource_filters(self, resource_filters: dict[str, str]):
         for key in resource_filters:
-            if key not in self._SUPPORTED_RESOURCE_FILTERS:
+            if key not in self.get_supported_resource_filters():
                 raise exception.InvalidInput(
                     f"Invalid resource filter: {key}, "
-                    f"supported filters {self._SUPPORTED_RESOURCE_FILTERS}"
+                    f"supported filters {self.get_supported_resource_filters()}"
                 )

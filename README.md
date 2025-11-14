@@ -42,6 +42,39 @@ clouds:
 EOF
 ```
 
+Get migration handler capabilities:
+
+```
+$ sunbeam-migrate capabilities
++-----------------------------------------------------------------------------------------------------------------------+
+|                                                   Migration handlers                                                  |
++----------+---------------------+-----------------------+---------------------------+------------------------+---------+
+| Service  |    Resource type    | Member resource types | Associated resource types | Batch resource filters |  Ready  |
++----------+---------------------+-----------------------+---------------------------+------------------------+---------+
+| Barbican |        secret       |           -           |             -             |        owner_id        |  no-op  |
+| Barbican |   secret-container  |           -           |           secret          |        owner_id        |  no-op  |
+|  Glance  |        image        |           -           |             -             |        owner_id        | partial |
+| Neutron  |       network       |         subnet        |             -             |        owner_id        |  no-op  |
+| Neutron  |    security-group   |  security-group-rule  |             -             |        owner_id        |  no-op  |
+| Neutron  | security-group-rule |           -           |       security-group      |        owner_id        |  no-op  |
+| Neutron  |        subnet       |           -           |          network          |        owner_id        |  no-op  |
++----------+---------------------+-----------------------+---------------------------+------------------------+---------+
+
+$ sunbeam-migrate capabilities --resource-type=subnet
++--------------------------------------+
+|          Migration handler           |
++---------------------------+----------+
+|          Property         |  Value   |
++---------------------------+----------+
+|          Service          | Neutron  |
+|       Resource type       |  subnet  |
+|   Member resource types   |    -     |
+| Associated resource types | network  |
+|   Batch resource filters  | owner_id |
+|         Readiness         |  no-op   |
++---------------------------+----------+
+```
+
 Migrate a single image:
 
 ```
@@ -129,9 +162,9 @@ $ sunbeam-migrate cleanup-source --resource-type=image
 
 ## TODOs
 
-* Store the destination resource uuid even in case of failed migrations, if available.
-  * might be unnecessary if we choose to automatically remove the resources
-    in case of failures
-* Decide what to do with dependent resources (e.g. networks, subnets, routers)
+* Automatically migrate dependent/component resources.
+  * We could add some flags, making this optional
+    * --cascade -> migrate component resources (e.g. network -> subnet)
+    * --include-dependencies -> e.g. subnet -> network, instance -> volume, etc
 * Add new resource handlers.
 * Implement some tests.

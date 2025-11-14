@@ -3,20 +3,29 @@
 
 import hashlib
 
-from sunbeam_migrate import config, exception
+from sunbeam_migrate import config, constants, exception
 from sunbeam_migrate.handlers import base
 
 CONF = config.get_config()
 
 
-class GlanceImageMigrationHandler(base.BaseMigrationHandler):
+class ImageHandler(base.BaseMigrationHandler):
     """Handle Glance image migrations."""
-
-    _SUPPORTED_RESOURCE_FILTERS = ["owner_id"]
 
     def get_service_type(self) -> str:
         """Get the service type for this type of resource."""
         return "glance"
+
+    def get_supported_resource_filters(self) -> list[str]:
+        """Get a list of supported resource filters.
+
+        These filters can be specified when initiating batch migrations.
+        """
+        return ["owner_id"]
+
+    def get_implementation_status(self) -> str:
+        """Describe the implementation status."""
+        return constants.IMPL_PARTIAL
 
     def perform_individual_migration(self, resource_id: str):
         """Migrate the specified resource.

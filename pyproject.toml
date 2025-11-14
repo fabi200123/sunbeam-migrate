@@ -775,6 +775,7 @@ extend-ignore = ["E203"]
     "S",    # Disable bandit rules in tests
 ]
 "**/__init__.py" = ["D104"]
+"**/factory.py" = ["E501"]  # expected to contain long module paths
 
 
 "sunbeam_migrate/*" = [

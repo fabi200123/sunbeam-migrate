@@ -7,17 +7,35 @@ from sunbeam_migrate import exception
 from sunbeam_migrate.handlers import base
 
 MIGRATION_HANDLERS = {
-    "image": "GlanceImageMigrationHandler",
+    # Barbican handlers
+    "secret": "sunbeam_migrate.handlers.barbican.secret.SecretHandler",
+    "secret-container": "sunbeam_migrate.handlers.barbican.secret_container.SecretContainerHandler",
+    # Glance handlers
+    "image": "sunbeam_migrate.handlers.glance.image.ImageHandler",
+    # Neutron handlers
+    "network": "sunbeam_migrate.handlers.neutron.network.NetworkHandler",
+    "subnet": "sunbeam_migrate.handlers.neutron.subnet.SubnetHandler",
+    "security-group": "sunbeam_migrate.handlers.neutron.security_group.SecurityGroupHandler",
+    "security-group-rule": "sunbeam_migrate.handlers.neutron.security_group_rule.SecurityGroupRuleHandler",
 }
 
 
 def get_migration_handler(resource_type: str | None) -> base.BaseMigrationHandler:
+    """Get the migration handler for the given resource type."""
     if not resource_type:
         raise exception.InvalidInput("No resource type specified.")
     if resource_type not in MIGRATION_HANDLERS:
         raise exception.InvalidInput("Unsupported resource type: %s" % resource_type)
 
-    class_name = MIGRATION_HANDLERS[resource_type]
-    module = importlib.import_module(f"sunbeam_migrate.handlers.{resource_type}")
+    module_name, class_name = MIGRATION_HANDLERS[resource_type].rsplit(".", 1)
+    module = importlib.import_module(module_name)
     cls = getattr(module, class_name)
     return cls()
+
+
+def get_all_handlers() -> dict[str, base.BaseMigrationHandler]:
+    """Get instances of all the supported resource handlers."""
+    handlers: dict[str, base.BaseMigrationHandler] = {}
+    for resource_type in MIGRATION_HANDLERS:
+        handlers[resource_type] = get_migration_handler(resource_type)
+    return handlers

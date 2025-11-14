@@ -53,6 +53,8 @@ def start_batch_migration(
     cleanup_source: bool,
 ):
     """Migrate multiple resources that match the filters."""
+    if not resource_type:
+        raise click.ClickException("No resource type specified.")
     if not resource_filters and not migrate_all:
         raise click.ClickException(
             "No filters specified. Specify '--all' to migrate all resources."

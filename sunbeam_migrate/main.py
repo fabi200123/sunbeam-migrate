@@ -8,6 +8,7 @@ from pathlib import Path
 import click
 
 from sunbeam_migrate import config, log
+from sunbeam_migrate.cmd import capabilities as capabilities_cmd
 from sunbeam_migrate.cmd import cleanup_source as cleanup_source_cmd
 from sunbeam_migrate.cmd import delete as delete_cmd
 from sunbeam_migrate.cmd import list as list_cmd
@@ -27,7 +28,7 @@ CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
 @click.option("--config", "-c", "config_path", envvar="SUNBEAM_MIGRATE_CONFIG")
 @click.option("--debug", is_flag=True, help="Debug logging.")
 @click.pass_context
-def cli(ctx, config_path: str, debug: str):
+def cli(ctx, config_path: str, debug: bool):
     """Migrate resources between Openstack clouds.
 
     This tool is primarily designed to assist the migration from
@@ -48,6 +49,7 @@ def main():
     """Main entry point."""
     LOG.debug("command: %s", " ".join(sys.argv))
 
+    cli.add_command(capabilities_cmd.show_capabilities)
     cli.add_command(list_cmd.list_migrations)
     cli.add_command(show_cmd.show_migration)
     cli.add_command(start_cmd.start_migration)
