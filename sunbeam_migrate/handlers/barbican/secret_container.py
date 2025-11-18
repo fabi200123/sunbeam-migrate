@@ -81,13 +81,14 @@ class SecretContainerHandler(base.BaseMigrationHandler):
         secret_refs = []
         for secret_ref_dict in source_container.secret_refs:
             destination_ref = self._get_associated_resource_destination_id(
-                "secret",
-                secret_ref_dict["secret_ref"],
-                migrated_associated_resources)
-            secret_refs.append({
-                "name": secret_ref_dict["name"],
-                "secret_ref": destination_ref,
-            })
+                "secret", secret_ref_dict["secret_ref"], migrated_associated_resources
+            )
+            secret_refs.append(
+                {
+                    "name": secret_ref_dict["name"],
+                    "secret_ref": destination_ref,
+                }
+            )
         kwargs["secret_refs"] = secret_refs
 
         destination_secret = self._destination_session.key_manager.create_container(

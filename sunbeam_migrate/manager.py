@@ -19,7 +19,7 @@ class SunbeamMigrationManager:
         resource_id: str,
         cleanup_source: bool = False,
         include_dependencies: bool = False,
-    ):
+    ) -> models.Migration:
         """Migrate the specified resource."""
         handler = factory.get_migration_handler(resource_type)
 
@@ -39,6 +39,7 @@ class SunbeamMigrationManager:
         migration.save()
 
         try:
+            associated_migrations = []
             associated_resources = self._get_associated_resources(
                 resource_type, resource_id
             )
@@ -64,13 +65,12 @@ class SunbeamMigrationManager:
                         assoc_resource_type,
                         assoc_resource_id,
                     )
-                    # TODO: honor the "cleanup_sources" flag for associated
-                    # resources.
-                    self.perform_individual_migration(
+                    associated_migration = self.perform_individual_migration(
                         assoc_resource_type,
                         assoc_resource_id,
                         include_dependencies=include_dependencies,
                     )
+                    associated_migrations.append(associated_migration)
 
                 # Refresh the associated resources and ensure that all of them have
                 # been migrated.
@@ -99,10 +99,14 @@ class SunbeamMigrationManager:
         if cleanup_source:
             self.cleanup_migration_source(migration)
 
+            for associated_migration in associated_migrations:
+                self.cleanup_migration_source(associated_migration)
+
         LOG.info("Successfully migrated resource, destination id: %s", destination_id)
         migration.status = constants.STATUS_COMPLETED
         migration.destination_id = destination_id
         migration.save()
+        return migration
 
     def _get_associated_resources(
         self,
