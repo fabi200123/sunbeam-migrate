@@ -49,14 +49,43 @@ class SecurityGroupHandler(base.BaseMigrationHandler):
 
         Return the resulting resource id.
         """
-        raise NotImplementedError()
+        source_sg = self._source_session.network.get_security_group(resource_id)
+        if not source_sg:
+            raise Exception(f"Security Group not found: {resource_id}")
+
+        sec_group_attrs = {
+            "description": source_sg.description,
+            "name": source_sg.name,
+            "stateful": source_sg.is_stateful,
+            "project_id": source_sg.project_id,
+        }
+
+        kwargs = {}
+        for field in sec_group_attrs:
+            value = getattr(source_sg, field, None)
+            if value:
+                kwargs[field] = value
+
+        dest_sg = self._destination_session.network.create_security_group(
+            **kwargs
+        )
+        return dest_sg.id
 
     def get_source_resource_ids(self, resource_filters: dict[str, str]) -> list[str]:
         """Returns a list of resource ids based on the specified filters.
 
         Raises an exception if any of the filters are unsupported.
         """
-        raise NotImplementedError()
+        self._validate_resource_filters(resource_filters)
+
+        query_filters = {}
+        if "owner_id" in resource_filters:
+            query_filters["tenant_id"] = resource_filters["owner_id"]
+
+        source_security_groups = self._source_session.network.list_security_groups(
+            **query_filters
+        )
+        return [sg.id for sg in source_security_groups]
 
     def _delete_resource(self, resource_id: str, openstack_session):
         raise NotImplementedError()

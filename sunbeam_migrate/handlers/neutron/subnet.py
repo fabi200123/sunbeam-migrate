@@ -49,14 +49,98 @@ class SubnetHandler(base.BaseMigrationHandler):
 
         Return the resulting resource id.
         """
-        raise NotImplementedError()
+        source_subnet = self._source_session.network.get_subnet(resource_id)
+        if not source_subnet:
+            raise Exception(f"Subnet not found: {resource_id}")
+
+        # Resolve the destination network id (the network must have been migrated already).
+        destination_network_id = self._get_associated_resource_destination_id(
+            "network",
+            source_subnet.network_id,
+            migrated_associated_resources,
+        )
+
+        subnet_attrs: dict[str, object] = {}
+
+        def _set_attr(key: str, value, allow_empty: bool = False):
+            if value is None:
+                return
+            if not allow_empty and isinstance(value, (list, tuple, dict, set)) and not value:
+                return
+            subnet_attrs[key] = value
+
+        # Required fields
+        _set_attr("network_id", destination_network_id)
+        _set_attr("cidr", source_subnet.cidr)
+        _set_attr("ip_version", source_subnet.ip_version)
+
+        # Optional identifiers
+        _set_attr("name", source_subnet.name)
+        _set_attr("segment_id", source_subnet.segment_id)
+
+        # Descriptive fields
+        _set_attr("description", source_subnet.description)
+
+        # Address configuration
+        _set_attr("allocation_pools", source_subnet.allocation_pools)
+        _set_attr("dns_nameservers", source_subnet.dns_nameservers)
+        _set_attr("gateway_ip", source_subnet.gateway_ip)
+        _set_attr("host_routes", getattr(source_subnet, "host_routes", None))
+
+        # IPv6 specific settings (booleans/strings may be falsy -> allow_empty)
+        _set_attr("ipv6_address_mode", source_subnet.ipv6_address_mode)
+        _set_attr("ipv6_ra_mode", source_subnet.ipv6_ra_mode)
+
+        # DHCP / subnet pool flags – include False values as well
+        if source_subnet.enable_dhcp is not None:
+            subnet_attrs["enable_dhcp"] = source_subnet.enable_dhcp
+        if source_subnet.use_default_subnet_pool is not None:
+            subnet_attrs["use_default_subnet_pool"] = source_subnet.use_default_subnet_pool
+        _set_attr("subnetpool_id", getattr(source_subnet, "subnetpool_id", None))
+
+        # Service metadata
+        _set_attr("service_types", source_subnet.service_types)
+
+        # Map project/tenant if possible
+        project_id = getattr(source_subnet, "project_id", None) or getattr(
+            source_subnet, "tenant_id", None
+        )
+        if project_id:
+            try:
+                source_project = self._source_session.get_project(project_id)
+                if source_project:
+                    dest_project = self._get_explicit_destination_project(
+                        source_project.name
+                    )
+                    if dest_project:
+                        subnet_attrs["project_id"] = dest_project.id
+                    else:
+                        # When None, the SDK uses the authenticated project
+                        pass
+            except Exception:
+                subnet_attrs["project_id"] = project_id
+
+        destination_subnet = self._destination_session.network.create_subnet(
+            **subnet_attrs
+        )
+        return destination_subnet.id
 
     def get_source_resource_ids(self, resource_filters: dict[str, str]) -> list[str]:
         """Returns a list of resource ids based on the specified filters.
 
         Raises an exception if any of the filters are unsupported.
         """
-        raise NotImplementedError()
+        self._validate_resource_filters(resource_filters)
+
+        query_filters = {}
+        if "owner_id" in resource_filters:
+            query_filters["project_id"] = resource_filters["owner_id"]
+
+        resource_ids = []
+        for resource in self._source_session.network.subnets(**query_filters):
+            resource_ids.append(resource.id)
+
+        return resource_ids
 
     def _delete_resource(self, resource_id: str, openstack_session):
         raise NotImplementedError()
