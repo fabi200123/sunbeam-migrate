@@ -54,10 +54,10 @@ $ sunbeam-migrate capabilities
 | Barbican |        secret       |           -           |             -             |        owner_id        | partial |
 | Barbican |   secret-container  |           -           |           secret          |        owner_id        | partial |
 |  Glance  |        image        |           -           |             -             |        owner_id        | partial |
-| Neutron  |       network       |         subnet        |             -             |        owner_id        |  no-op  |
-| Neutron  |    security-group   |  security-group-rule  |             -             |        owner_id        |  no-op  |
-| Neutron  | security-group-rule |           -           |       security-group      |        owner_id        |  no-op  |
-| Neutron  |        subnet       |           -           |          network          |        owner_id        |  no-op  |
+| Neutron  |       network       |         subnet        |             -             |        owner_id        | partial |
+| Neutron  |    security-group   |  security-group-rule  |             -             |        owner_id        | partial |
+| Neutron  | security-group-rule |           -           |       security-group      |        owner_id        | partial |
+| Neutron  |        subnet       |           -           |          network          |        owner_id        | partial |
 +----------+---------------------+-----------------------+---------------------------+------------------------+---------+
 
 $ sunbeam-migrate capabilities --resource-type=subnet
@@ -71,7 +71,7 @@ $ sunbeam-migrate capabilities --resource-type=subnet
 |   Member resource types   |    -     |
 | Associated resource types | network  |
 |   Batch resource filters  | owner_id |
-|         Readiness         |  no-op   |
+|         Readiness         | partial  |
 +---------------------------+----------+
 ```
 

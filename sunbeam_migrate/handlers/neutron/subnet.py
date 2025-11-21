@@ -1,7 +1,9 @@
 # SPDX-FileCopyrightText: 2025 - Canonical Ltd
 # SPDX-License-Identifier: Apache-2.0
 
-from sunbeam_migrate import config
+from sunbeam_migrate import config, constants, exception
+from sunbeam_migrate.db import api as db_api
+from sunbeam_migrate.db import models
 from sunbeam_migrate.handlers import base
 
 CONF = config.get_config()
@@ -27,6 +29,39 @@ class SubnetHandler(base.BaseMigrationHandler):
         Associated resources must be migrated first.
         """
         return ["network"]
+
+    def get_implementation_status(self) -> str:
+        """Describe the implementation status."""
+        return constants.IMPL_PARTIAL
+
+    def get_associated_resources(self, resource_id: str) -> list[tuple[str, str]]:
+        """Return the source resources this subnet depends on."""
+        source_subnet = self._source_session.network.get_subnet(resource_id)
+        if not source_subnet:
+            raise Exception(f"Subnet not found: {resource_id}")
+        
+        associated_resources = []
+        for network_ref in [source_subnet.network_id]:
+            associated_resources.append(("network", network_ref))
+
+        return associated_resources
+
+    def _get_migrated_network_id(self, source_network_id: str) -> str | None:
+        """Return destination id for an already migrated network, if any."""
+        session = db_api.get_session()
+        migration = (
+            session.query(models.Migration)
+            .filter_by(
+                resource_type="network",
+                source_id=source_network_id,
+                status=constants.STATUS_COMPLETED,
+            )
+            .order_by(models.Migration.created_at.desc())
+            .first()
+        )
+        if migration:
+            return migration.destination_id
+        return None
 
     def get_member_resource_types(self) -> list[str]:
         """Get a list of member (contained) resource types.
@@ -54,11 +89,23 @@ class SubnetHandler(base.BaseMigrationHandler):
             raise Exception(f"Subnet not found: {resource_id}")
 
         # Resolve the destination network id (the network must have been migrated already).
-        destination_network_id = self._get_associated_resource_destination_id(
-            "network",
-            source_subnet.network_id,
-            migrated_associated_resources,
-        )
+        try:
+            destination_network_id = self._get_associated_resource_destination_id(
+                "network",
+                source_subnet.network_id,
+                migrated_associated_resources,
+            )
+        except exception.NotFound:
+            destination_network_id = self._get_migrated_network_id(
+                source_subnet.network_id
+            )
+
+        if not destination_network_id:
+            raise exception.InvalidInput(
+                "Unable to find migrated destination network for subnet "
+                f"{resource_id}. Migrate the parent network first or rerun with "
+                "'--include-dependencies'."
+            )
 
         subnet_attrs: dict[str, object] = {}
 
@@ -84,6 +131,10 @@ class SubnetHandler(base.BaseMigrationHandler):
         # Address configuration
         _set_attr("allocation_pools", source_subnet.allocation_pools)
         _set_attr("dns_nameservers", source_subnet.dns_nameservers)
+        _set_attr(
+            "dns_publish_fixed_ip",
+            getattr(source_subnet, "dns_publish_fixed_ip", None),
+        )
         _set_attr("gateway_ip", source_subnet.gateway_ip)
         _set_attr("host_routes", getattr(source_subnet, "host_routes", None))
 
@@ -92,11 +143,24 @@ class SubnetHandler(base.BaseMigrationHandler):
         _set_attr("ipv6_ra_mode", source_subnet.ipv6_ra_mode)
 
         # DHCP / subnet pool flags – include False values as well
-        if source_subnet.enable_dhcp is not None:
-            subnet_attrs["enable_dhcp"] = source_subnet.enable_dhcp
+        is_dhcp_enabled = getattr(
+            source_subnet,
+            "is_dhcp_enabled",
+            getattr(source_subnet, "enable_dhcp", None),
+        )
+        if is_dhcp_enabled is not None:
+            subnet_attrs["is_dhcp_enabled"] = is_dhcp_enabled
         if source_subnet.use_default_subnet_pool is not None:
             subnet_attrs["use_default_subnet_pool"] = source_subnet.use_default_subnet_pool
-        _set_attr("subnetpool_id", getattr(source_subnet, "subnetpool_id", None))
+        _set_attr(
+            "subnet_pool_id",
+            getattr(
+                source_subnet,
+                "subnet_pool_id",
+                getattr(source_subnet, "subnetpool_id", None),
+            ),
+        )
+        _set_attr("prefix_length", getattr(source_subnet, "prefix_length", None))
 
         # Service metadata
         _set_attr("service_types", source_subnet.service_types)

@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2025 - Canonical Ltd
 # SPDX-License-Identifier: Apache-2.0
 
-from sunbeam_migrate import config
+from sunbeam_migrate import config, constants
 from sunbeam_migrate.handlers import base
 
 CONF = config.get_config()
@@ -26,6 +26,14 @@ class SecurityGroupHandler(base.BaseMigrationHandler):
 
         Associated resources must be migrated first.
         """
+        return []
+
+    def get_implementation_status(self) -> str:
+        """Describe the implementation status."""
+        return constants.IMPL_PARTIAL
+
+    def get_associated_resources(self, resource_id: str) -> list[tuple[str, str]]:
+        """Security groups have no prerequisite resources."""
         return []
 
     def get_member_resource_types(self) -> list[str]:
@@ -53,22 +61,36 @@ class SecurityGroupHandler(base.BaseMigrationHandler):
         if not source_sg:
             raise Exception(f"Security Group not found: {resource_id}")
 
-        sec_group_attrs = {
-            "description": source_sg.description,
-            "name": source_sg.name,
-            "stateful": source_sg.is_stateful,
-            "project_id": source_sg.project_id,
-        }
+        sg_attrs: dict[str, object] = {}
 
-        kwargs = {}
-        for field in sec_group_attrs:
-            value = getattr(source_sg, field, None)
-            if value:
-                kwargs[field] = value
+        def _set_attr(key: str, value):
+            if value is None:
+                return
+            if isinstance(value, str) and value == "":
+                return
+            sg_attrs[key] = value
 
-        dest_sg = self._destination_session.network.create_security_group(
-            **kwargs
+        _set_attr("name", source_sg.name)
+        _set_attr("description", source_sg.description)
+        if getattr(source_sg, "is_stateful", None) is not None:
+            sg_attrs["is_stateful"] = source_sg.is_stateful
+
+        project_id = getattr(source_sg, "project_id", None) or getattr(
+            source_sg, "tenant_id", None
         )
+        if project_id:
+            try:
+                source_project = self._source_session.get_project(project_id)
+                if source_project:
+                    dest_project = self._get_explicit_destination_project(
+                        source_project.name
+                    )
+                    if dest_project:
+                        sg_attrs["project_id"] = dest_project.id
+            except Exception:
+                sg_attrs["project_id"] = project_id
+
+        dest_sg = self._destination_session.network.create_security_group(**sg_attrs)
         return dest_sg.id
 
     def get_source_resource_ids(self, resource_filters: dict[str, str]) -> list[str]:
