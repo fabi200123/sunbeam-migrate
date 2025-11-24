@@ -189,6 +189,7 @@ class BaseMigrationHandler(abc.ABC):
             if resource_type == assoc_resource_type and source_id == assoc_source_id:
                 return assoc_destination_id
         raise exception.NotFound(
-            "Couldn't find migrated associated resource: %s %s - %s"
+            "Couldn't find migrated associated resource: %s %s - %s. "
+            "Please migrate it first or rerun the command with '--include-dependencies'"
             % (resource_type, source_id, migrated_associated_resources)
         )
