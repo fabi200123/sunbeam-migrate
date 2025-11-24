@@ -37,7 +37,17 @@ class NetworkHandler(base.BaseMigrationHandler):
 
         The migrations can cascade to contained resources.
         """
-        return ["network"]
+        return ["subnet"]
+
+    def get_member_resources(self, resource_id: str) -> list[tuple[str, str]]:
+        """Return the subnets that belong to this network."""
+        source_network = self._source_session.network.get_network(resource_id)
+        if not source_network:
+            raise Exception(f"Network not found: {resource_id}")
+        member_resources: list[tuple[str, str]] = []
+        for subnet in self._source_session.network.subnets(network_id=source_network.id):
+            member_resources.append(("subnet", subnet.id))
+        return member_resources
 
     def perform_individual_migration(
         self,
@@ -57,32 +67,30 @@ class NetworkHandler(base.BaseMigrationHandler):
         if not source_network:
             raise Exception(f"Network not found: {resource_id}")
 
-        network_attrs = {
-            "availability_zone_hints": source_network.availability_zone_hints,
-            "description": source_network.description,
-            "dns_domain": source_network.dns_domain,
-            "is_admin_state_up": source_network.is_admin_state_up,
-            "is_default": source_network.is_default,
-            "is_port_security_enabled": source_network.is_port_security_enabled,
-            "is_router_external": source_network.is_router_external,
-            "is_shared": source_network.is_shared,
-            "mtu": source_network.mtu,
-            "name": source_network.name,
-            "project_id": source_network.project_id,
-            "provider_network_type": source_network.provider_network_type,
-            "provider_physical_network": source_network.provider_physical_network,
-            "provider_segmentation_id": source_network.provider_segmentation_id,
-            "segments": source_network.segments,
-        }
-
+        fields = [
+            "availability_zone_hints",
+            "description",
+            "dns_domain",
+            "is_admin_state_up",
+            "is_default",
+            "is_port_security_enabled",
+            "is_router_external",
+            "is_shared",
+            "mtu",
+            "name",
+            "project_id",
+            "provider_network_type",
+            "provider_physical_network",
+            "provider_segmentation_id",
+            "segments",
+        ]
         kwargs = {}
-        for field in network_attrs:
+        for field in fields:
             value = getattr(source_network, field, None)
             if value:
                 kwargs[field] = value
-        dest_network = self._destination_session.network.create_network(
-            **kwargs
-        )
+
+        dest_network = self._destination_session.network.create_network(**kwargs)
 
         return dest_network.id
 

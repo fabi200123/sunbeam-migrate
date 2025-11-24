@@ -43,6 +43,19 @@ class SecurityGroupHandler(base.BaseMigrationHandler):
         """
         return ["security-group-rule"]
 
+    def get_member_resources(self, resource_id: str) -> list[tuple[str, str]]:
+        """Return the rules belonging to this security group."""
+        source_sg = self._source_session.network.get_security_group(resource_id)
+        if not source_sg:
+            raise Exception(f"Security Group not found: {resource_id}")
+
+        member_resources: list[tuple[str, str]] = []
+        for rule in self._source_session.network.security_group_rules(
+            security_group_id=source_sg.id
+        ):
+            member_resources.append(("security-group-rule", rule.id))
+        return member_resources
+
     def perform_individual_migration(
         self,
         resource_id: str,
@@ -61,36 +74,23 @@ class SecurityGroupHandler(base.BaseMigrationHandler):
         if not source_sg:
             raise Exception(f"Security Group not found: {resource_id}")
 
-        sg_attrs: dict[str, object] = {}
+        fields = ["description", "name", "project_id"]
+        kwargs = {}
+        for field in fields:
+            if field == "project_id":
+                value = getattr(source_sg, "project_id", None) or getattr(
+                    source_sg, "tenant_id", None
+                )
+            else:
+                value = getattr(source_sg, field, None)
+            if value:
+                kwargs[field] = value
 
-        def _set_attr(key: str, value):
-            if value is None:
-                return
-            if isinstance(value, str) and value == "":
-                return
-            sg_attrs[key] = value
-
-        _set_attr("name", source_sg.name)
-        _set_attr("description", source_sg.description)
+        # Handle boolean fields that can be False
         if getattr(source_sg, "is_stateful", None) is not None:
-            sg_attrs["is_stateful"] = source_sg.is_stateful
+            kwargs["is_stateful"] = source_sg.is_stateful
 
-        project_id = getattr(source_sg, "project_id", None) or getattr(
-            source_sg, "tenant_id", None
-        )
-        if project_id:
-            try:
-                source_project = self._source_session.get_project(project_id)
-                if source_project:
-                    dest_project = self._get_explicit_destination_project(
-                        source_project.name
-                    )
-                    if dest_project:
-                        sg_attrs["project_id"] = dest_project.id
-            except Exception:
-                sg_attrs["project_id"] = project_id
-
-        dest_sg = self._destination_session.network.create_security_group(**sg_attrs)
+        dest_sg = self._destination_session.network.create_security_group(**kwargs)
         return dest_sg.id
 
     def get_source_resource_ids(self, resource_filters: dict[str, str]) -> list[str]:

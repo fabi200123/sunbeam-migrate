@@ -107,86 +107,61 @@ class SubnetHandler(base.BaseMigrationHandler):
                 "'--include-dependencies'."
             )
 
-        subnet_attrs: dict[str, object] = {}
-
-        def _set_attr(key: str, value, allow_empty: bool = False):
-            if value is None:
-                return
-            if not allow_empty and isinstance(value, (list, tuple, dict, set)) and not value:
-                return
-            subnet_attrs[key] = value
-
-        # Required fields
-        _set_attr("network_id", destination_network_id)
-        _set_attr("cidr", source_subnet.cidr)
-        _set_attr("ip_version", source_subnet.ip_version)
-
-        # Optional identifiers
-        _set_attr("name", source_subnet.name)
-        _set_attr("segment_id", source_subnet.segment_id)
-
-        # Descriptive fields
-        _set_attr("description", source_subnet.description)
-
-        # Address configuration
-        _set_attr("allocation_pools", source_subnet.allocation_pools)
-        _set_attr("dns_nameservers", source_subnet.dns_nameservers)
-        _set_attr(
+        fields = [
+            "allocation_pools",
+            "cidr",
+            "description",
+            "dns_nameservers",
             "dns_publish_fixed_ip",
-            getattr(source_subnet, "dns_publish_fixed_ip", None),
-        )
-        _set_attr("gateway_ip", source_subnet.gateway_ip)
-        _set_attr("host_routes", getattr(source_subnet, "host_routes", None))
+            "gateway_ip",
+            "host_routes",
+            "ip_version",
+            "ipv6_address_mode",
+            "ipv6_ra_mode",
+            "name",
+            "prefix_length",
+            "project_id",
+            "segment_id",
+            "service_types",
+            "subnet_pool_id",
+        ]
+        kwargs = {}
+        for field in fields:
+            if field == "dns_publish_fixed_ip":
+                value = getattr(source_subnet, "dns_publish_fixed_ip", None)
+            elif field == "host_routes":
+                value = getattr(source_subnet, "host_routes", None)
+            elif field == "prefix_length":
+                value = getattr(source_subnet, "prefix_length", None)
+            elif field == "project_id":
+                value = getattr(source_subnet, "project_id", None) or getattr(
+                    source_subnet, "tenant_id", None
+                )
+            elif field == "subnet_pool_id":
+                value = getattr(
+                    source_subnet,
+                    "subnet_pool_id",
+                    getattr(source_subnet, "subnetpool_id", None),
+                )
+            else:
+                value = getattr(source_subnet, field, None)
+            if value:
+                kwargs[field] = value
 
-        # IPv6 specific settings (booleans/strings may be falsy -> allow_empty)
-        _set_attr("ipv6_address_mode", source_subnet.ipv6_address_mode)
-        _set_attr("ipv6_ra_mode", source_subnet.ipv6_ra_mode)
-
-        # DHCP / subnet pool flags – include False values as well
+        # Handle boolean fields that can be False
         is_dhcp_enabled = getattr(
             source_subnet,
             "is_dhcp_enabled",
             getattr(source_subnet, "enable_dhcp", None),
         )
         if is_dhcp_enabled is not None:
-            subnet_attrs["is_dhcp_enabled"] = is_dhcp_enabled
+            kwargs["is_dhcp_enabled"] = is_dhcp_enabled
         if source_subnet.use_default_subnet_pool is not None:
-            subnet_attrs["use_default_subnet_pool"] = source_subnet.use_default_subnet_pool
-        _set_attr(
-            "subnet_pool_id",
-            getattr(
-                source_subnet,
-                "subnet_pool_id",
-                getattr(source_subnet, "subnetpool_id", None),
-            ),
-        )
-        _set_attr("prefix_length", getattr(source_subnet, "prefix_length", None))
+            kwargs["use_default_subnet_pool"] = source_subnet.use_default_subnet_pool
 
-        # Service metadata
-        _set_attr("service_types", source_subnet.service_types)
+        kwargs["network_id"] = destination_network_id
 
-        # Map project/tenant if possible
-        project_id = getattr(source_subnet, "project_id", None) or getattr(
-            source_subnet, "tenant_id", None
-        )
-        if project_id:
-            try:
-                source_project = self._source_session.get_project(project_id)
-                if source_project:
-                    dest_project = self._get_explicit_destination_project(
-                        source_project.name
-                    )
-                    if dest_project:
-                        subnet_attrs["project_id"] = dest_project.id
-                    else:
-                        # When None, the SDK uses the authenticated project
-                        pass
-            except Exception:
-                subnet_attrs["project_id"] = project_id
-
-        destination_subnet = self._destination_session.network.create_subnet(
-            **subnet_attrs
-        )
+        destination_subnet = self._destination_session.network.create_subnet(**kwargs)
         return destination_subnet.id
 
     def get_source_resource_ids(self, resource_filters: dict[str, str]) -> list[str]:

@@ -104,30 +104,38 @@ class SecurityGroupRuleHandler(base.BaseMigrationHandler):
 
         dest_security_group_id = _resolve_sg_id(source_sg_rule.security_group_id)
 
-        sg_rule_attrs: dict[str, object] = {
-            "description": source_sg_rule.description,
-            "direction": source_sg_rule.direction,
-            "ether_type": source_sg_rule.ether_type,
-            "port_range_max": source_sg_rule.port_range_max,
-            "port_range_min": source_sg_rule.port_range_min,
-            "protocol": source_sg_rule.protocol,
-            "remote_ip_prefix": source_sg_rule.remote_ip_prefix,
-        }
+        fields = [
+            "description",
+            "direction",
+            "port_range_max",
+            "port_range_min",
+            "protocol",
+            "project_id",
+            "remote_ip_prefix",
+        ]
+        kwargs = {}
+        for field in fields:
+            if field == "project_id":
+                value = getattr(source_sg_rule, "project_id", None) or getattr(
+                    source_sg_rule, "tenant_id", None
+                )
+            else:
+                value = getattr(source_sg_rule, field, None)
+            if value:
+                kwargs[field] = value
 
+        # Handle ether_type (different attribute name)
+        ether_type = getattr(source_sg_rule, "ethertype", None)
+        if ether_type:
+            kwargs["ether_type"] = ether_type
+
+        # Handle remote_group_id (needs resolution)
         if source_sg_rule.remote_group_id:
-            sg_rule_attrs["remote_group_id"] = _resolve_sg_id(
-                source_sg_rule.remote_group_id
-            )
-
-        project_id = getattr(source_sg_rule, "project_id", None) or getattr(
-            source_sg_rule, "tenant_id", None
-        )
-        if project_id:
-            sg_rule_attrs["project_id"] = project_id
+            kwargs["remote_group_id"] = _resolve_sg_id(source_sg_rule.remote_group_id)
 
         destination_sg_rule = self._destination_session.network.create_security_group_rule(
             security_group_id=dest_security_group_id,
-            **{k: v for k, v in sg_rule_attrs.items() if v is not None},
+            **kwargs,
         )
 
         return destination_sg_rule.id
