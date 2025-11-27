@@ -55,6 +55,7 @@ $ sunbeam-migrate capabilities
 | Barbican |   secret-container  |           -           |           secret          |        owner_id        | partial |
 |  Glance  |        image        |           -           |             -             |        owner_id        | partial |
 | Neutron  |       network       |         subnet        |             -             |        owner_id        | partial |
+| Neutron  |        router       |           -           |             -             |        owner_id        | partial |
 | Neutron  |    security-group   |  security-group-rule  |             -             |        owner_id        | partial |
 | Neutron  | security-group-rule |           -           |       security-group      |        owner_id        | partial |
 | Neutron  |        subnet       |           -           |          network          |        owner_id        | partial |
