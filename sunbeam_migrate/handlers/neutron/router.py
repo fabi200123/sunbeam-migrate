@@ -107,7 +107,8 @@ class RouterHandler(base.BaseMigrationHandler):
                 if field == "external_gateway_info":
                     kwargs[field]["network_id"] = external_gateway_network_id
                     kwargs[field]["external_fixed_ips"] = [
-                        {"subnet_id": subnet_id} for subnet_id in external_gateway_subnet_ids
+                        {"subnet_id": subnet_id,
+                         "ip_address": value.get("ip_address")} for subnet_id in external_gateway_subnet_ids
                     ]
         
         destination_router = self._destination_session.network.create_router(**kwargs)
