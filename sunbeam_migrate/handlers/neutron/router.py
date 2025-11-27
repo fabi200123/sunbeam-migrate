@@ -66,7 +66,7 @@ class RouterHandler(base.BaseMigrationHandler):
         :param migrated_associated_resources: A list of tuples containing the
             resource type, source ID, and destination ID of associated resources
             that have already been migrated.
-        
+
         Return the resulting resource id.
         """
         source_router = self._source_session.network.get_router(resource_id)
@@ -74,20 +74,32 @@ class RouterHandler(base.BaseMigrationHandler):
             raise exception.NotFound(f"Router not found: {resource_id}")
 
         external_gateway_network_id = None
-        external_gateway_subnet_ids = []
+        external_gateway_fixed_ips = []
+
         if source_router.external_gateway_info:
             external_gateway_network_id = self._get_associated_resource_destination_id(
                 "network",
                 source_router.external_gateway_info.get("network_id"),
                 migrated_associated_resources,
             )
-            for fixed_ip in source_router.external_gateway_info.get("external_fixed_ips", []):
+
+            for fixed_ip in source_router.external_gateway_info.get(
+                "external_fixed_ips", []
+            ):
+                src_subnet_id = fixed_ip.get("subnet_id")
                 dest_subnet_id = self._get_associated_resource_destination_id(
                     "subnet",
-                    fixed_ip.get("subnet_id"),
+                    src_subnet_id,
                     migrated_associated_resources,
                 )
-                external_gateway_subnet_ids.append(dest_subnet_id)
+
+                external_gateway_fixed_ips.append(
+                    {
+                        "subnet_id": dest_subnet_id,
+                        "ip_address": fixed_ip.get("ip_address"),
+                    }
+                )
+
         fields = [
             "availability_zone_hints",
             "description",
@@ -99,18 +111,22 @@ class RouterHandler(base.BaseMigrationHandler):
             "name",
         ]
 
-        kwargs = {}
+        kwargs: dict = {}
         for field in fields:
             value = getattr(source_router, field, None)
-            if value is not None:
+            if value is None:
+                continue
+
+            if field == "external_gateway_info":
+                if external_gateway_network_id:
+                    value["network_id"] = external_gateway_network_id
+                if external_gateway_fixed_ips:
+                    value["external_fixed_ips"] = external_gateway_fixed_ips
+
                 kwargs[field] = value
-                if field == "external_gateway_info":
-                    kwargs[field]["network_id"] = external_gateway_network_id
-                    kwargs[field]["external_fixed_ips"] = [
-                        {"subnet_id": subnet_id,
-                         "ip_address": value.get("ip_address")} for subnet_id in external_gateway_subnet_ids
-                    ]
-        
+            else:
+                kwargs[field] = value
+
         destination_router = self._destination_session.network.create_router(**kwargs)
         return destination_router.id
 
