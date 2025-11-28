@@ -109,6 +109,13 @@ class BaseMigrationHandler(abc.ABC):
         """
         return []
 
+    def connect_member_resources_to_parent(self, parent_resource_id: str, member_resource_ids: list[tuple[str, str]]):
+        """Connect member resources to the parent resource.
+
+        This is called after member resources have been migrated.
+        """
+        pass
+
     def get_implementation_status(self) -> str:
         """Describe the implementation status."""
         return constants.IMPL_PLACEHOLDER
