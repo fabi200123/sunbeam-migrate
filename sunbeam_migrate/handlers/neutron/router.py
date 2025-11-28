@@ -1,10 +1,15 @@
 # SPDX-FileCopyrightText: 2025 - Canonical Ltd
 # SPDX-License-Identifier: Apache-2.0
 
+import logging
+
+from openstack import exceptions as openstack_exc
+
 from sunbeam_migrate import config, constants, exception
 from sunbeam_migrate.handlers import base
 
 CONF = config.get_config()
+LOG = logging.getLogger(__name__)
 
 class RouterHandler(base.BaseMigrationHandler):
     """Handle Neutron router migrations."""
@@ -34,13 +39,24 @@ class RouterHandler(base.BaseMigrationHandler):
             raise exception.NotFound(f"Router not found: {resource_id}")
 
         associated_resources = []
-        for network_ref in [source_router.external_gateway_info.get("network_id")]:
-            if network_ref:
-                associated_resources.append(("network", network_ref))
-        
-        for subnet_ref in [source_router.external_gateway_info.get("external_fixed_ips", [])]:
-            for subnet in subnet_ref:
-                associated_resources.append(("subnet", subnet.get("subnet_id")))
+
+        egi = source_router.external_gateway_info or {}
+
+        network_ref = egi.get("network_id")
+        if network_ref:
+            associated_resources.append(("network", network_ref))
+
+        for fixed_ip in egi.get("external_fixed_ips", []):
+            subnet_id = fixed_ip.get("subnet_id")
+            if subnet_id:
+                associated_resources.append(("subnet", subnet_id))
+
+        for iface in getattr(source_router, "interfaces_info", []) or []:
+            subnet_id = iface.get("subnet_id")
+            port_id = iface.get("port_id")
+            if subnet_id and port_id:
+                associated_resources.append(("network", port_id))
+                associated_resources.append(("subnet", subnet_id))
 
         return associated_resources
 
@@ -92,13 +108,33 @@ class RouterHandler(base.BaseMigrationHandler):
                     src_subnet_id,
                     migrated_associated_resources,
                 )
-
                 external_gateway_fixed_ips.append(
                     {
                         "subnet_id": dest_subnet_id,
                         "ip_address": fixed_ip.get("ip_address"),
                     }
                 )
+
+        internal_interfaces = []
+        for iface in getattr(source_router, "interfaces_info", []):
+            src_subnet_id = iface.get("subnet_id")
+            if not src_subnet_id:
+                continue
+            dest_subnet_id = self._get_associated_resource_destination_id(
+                "subnet",
+                src_subnet_id,
+                migrated_associated_resources,
+            )
+
+            src_port_id = iface.get("port_id")
+            if not src_port_id:
+                continue
+            dest_port_id = self._get_associated_resource_destination_id(
+                "network",
+                src_port_id,
+                migrated_associated_resources,
+            )
+            internal_interfaces.append((src_port_id, dest_port_id))
 
         fields = [
             "availability_zone_hints",
@@ -128,6 +164,21 @@ class RouterHandler(base.BaseMigrationHandler):
                 kwargs[field] = value
 
         destination_router = self._destination_session.network.create_router(**kwargs)
+
+        for dest_port_id, dest_subnet_id in internal_interfaces:
+            try:
+                self._destination_session.network.add_interface_to_router(
+                    destination_router,
+                    subnet_id=dest_subnet_id,
+                    port_id=dest_port_id,
+                )
+            except openstack_exc.ConflictException:
+                LOG.debug(
+                    "Interface for router %s on subnet %s already exists",
+                    destination_router.id,
+                    dest_subnet_id,
+                )
+
         return destination_router.id
 
     def get_source_resource_ids(self, resource_filters):
