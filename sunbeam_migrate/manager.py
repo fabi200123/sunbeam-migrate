@@ -37,13 +37,24 @@ class SunbeamMigrationManager:
         )
 
         if include_members:
-            self._migrate_member_resources(
+            member_resources = self._migrate_member_resources(
                 handler=handler,
                 resource_id=resource_id,
                 cleanup_source=cleanup_source,
                 include_dependencies=include_dependencies,
                 include_members=include_members,
             )
+            try:
+                handler.connect_member_resources_to_parent(
+                    parent_resource_id=migration.destination_id,
+                    member_resources=member_resources,
+                )
+            except Exception as ex:
+                LOG.error(
+                    "Failed to connect member resources to parent %s: %r",
+                    resource_id,
+                    ex,
+                )
 
         return migration
 
@@ -155,7 +166,7 @@ class SunbeamMigrationManager:
         cleanup_source: bool,
         include_dependencies: bool,
         include_members: bool,
-    ) -> None:
+    ) -> []:
         """Handle member resource migration logic."""
         member_resources = handler.get_member_resources(resource_id)
         for member_resource_type, member_resource_id in member_resources:
@@ -191,17 +202,8 @@ class SunbeamMigrationManager:
                     member_resource_id,
                     ex,
                 )
-            try:
-                self.connect_member_resources_to_parent(
-                    parent_resource_id=resource_id,
-                    member_resource_ids=member_resources,
-                )
-            except Exception as ex:
-                LOG.error(
-                    "Failed to connect member resources to parent %s: %r",
-                    resource_id,
-                    ex,
-                )
+
+        return member_resources
 
     def _get_associated_resources(
         self,

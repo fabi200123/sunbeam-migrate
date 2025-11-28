@@ -109,7 +109,7 @@ class BaseMigrationHandler(abc.ABC):
         """
         return []
 
-    def connect_member_resources_to_parent(self, parent_resource_id: str, member_resource_ids: list[tuple[str, str]]):
+    def connect_member_resources_to_parent(self, parent_resource_id: str, member_resources: list[tuple[str, str]]):
         """Connect member resources to the parent resource.
 
         This is called after member resources have been migrated.

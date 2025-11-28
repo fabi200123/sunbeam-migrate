@@ -51,13 +51,6 @@ class RouterHandler(base.BaseMigrationHandler):
             if subnet_id:
                 associated_resources.append(("subnet", subnet_id))
 
-        for iface in getattr(source_router, "interfaces_info", []) or []:
-            subnet_id = iface.get("subnet_id")
-            port_id = iface.get("port_id")
-            if subnet_id and port_id:
-                associated_resources.append(("network", port_id))
-                associated_resources.append(("subnet", subnet_id))
-
         return associated_resources
 
     def get_member_resource_types(self) -> list[str]:
@@ -69,13 +62,11 @@ class RouterHandler(base.BaseMigrationHandler):
 
     def get_member_resources(self, resource_id):
         """Return the networks and subnets that belong to this router."""
-
         source_router = self._source_session.network.get_router(resource_id)
         if not source_router:
             raise exception.NotFound(f"Router not found: {resource_id}")
 
-        member_resources = []
-
+        member_resources: list[tuple[str, str]] = []
         for iface in getattr(source_router, "interfaces_info", []) or []:
             subnet_id = iface.get("subnet_id")
             port_id = iface.get("port_id")
@@ -179,61 +170,26 @@ class RouterHandler(base.BaseMigrationHandler):
 
         destination_router = self._destination_session.network.create_router(**kwargs)
 
-        for dest_port_id, dest_subnet_id in internal_interfaces:
-            try:
-                self._destination_session.network.add_interface_to_router(
-                    destination_router,
-                    subnet_id=dest_subnet_id,
-                    port_id=dest_port_id,
-                )
-            except openstack_exc.ConflictException:
-                LOG.debug(
-                    "Interface for router %s on subnet %s already exists",
-                    destination_router.id,
-                    dest_subnet_id,
-                )
-
         return destination_router.id
 
-    def connect_member_resources_to_parent(self, parent_resource_id, member_resource_ids):
+    def connect_member_resources_to_parent(self, parent_resource_id, member_resources):
         """Connect member resources to the parent resource.
 
         This is called after member resources have been migrated.
         """
-        destination_router = self._destination_session.network.get_router(
-            parent_resource_id
-        )
-        if not destination_router:
-            raise exception.NotFound(
-                f"Destination Router not found: {parent_resource_id}"
-            )
-
-        interfaces_info = []
-        network_port_id = None
-        subnet_id = None
-        for resource_type, member_resource_id in member_resource_ids:
-            if resource_type == "network":
-                network_port_id = member_resource_id
+        for resource_type, member_resource_id in member_resources:
             if resource_type == "subnet":
-                subnet_id = member_resource_id
-            if network_port_id and subnet_id:
-                interfaces_info.append((network_port_id, subnet_id))
-                network_port_id = None
-                subnet_id = None
-
-        for dest_port_id, dest_subnet_id in interfaces_info:
-            try:
-                self._destination_session.network.add_interface_to_router(
-                    destination_router,
-                    subnet_id=dest_subnet_id,
-                    port_id=dest_port_id,
-                )
-            except openstack_exc.ConflictException:
-                LOG.debug(
-                    "Interface for router %s on subnet %s already exists",
-                    destination_router.id,
-                    dest_subnet_id,
-                )
+                try:
+                    self._destination_session.network.add_interface_to_router(
+                        parent_resource_id,
+                        subnet_id=member_resource_id,
+                    )
+                except openstack_exc.ConflictException:
+                    LOG.debug(
+                        "Interface for router %s on subnet %s already exists",
+                        parent_resource_id,
+                        member_resource_id,
+                    )
 
     def get_source_resource_ids(self, resource_filters):
         """Returns a list of resource ids based on the specified filters.
