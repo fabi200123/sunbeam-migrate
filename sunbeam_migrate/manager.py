@@ -102,6 +102,19 @@ class SunbeamMigrationManager:
                 for assoc_resource_type, assoc_resource_id in associated_resources[
                     "pending"
                 ]:
+                    # NEW: skip if it got migrated while handling another dependency
+                    existing = db_api.get_migrations(
+                        source_id=assoc_resource_id,
+                        resource_type=assoc_resource_type,
+                    )
+                    if existing and existing[0].status == constants.STATUS_COMPLETED:
+                        LOG.info(
+                            "Associated %s resource already migrated, skipping: %s",
+                            assoc_resource_type,
+                            assoc_resource_id,
+                        )
+                        continue
+
                     LOG.info(
                         "Migrating associated %s resource: %s",
                         assoc_resource_type,
@@ -127,8 +140,6 @@ class SunbeamMigrationManager:
                         % (resource_type, resource_id, associated_resources)
                     )
 
-            # The handler is expected to cleanup failed migrations on the destination
-            # side.
             destination_id = handler.perform_individual_migration(
                 resource_id,
                 migrated_associated_resources=associated_resources["migrated"],
@@ -166,15 +177,25 @@ class SunbeamMigrationManager:
         cleanup_source: bool,
         include_dependencies: bool,
         include_members: bool,
-    ) -> []:
-        """Handle member resource migration logic."""
-        member_resources = handler.get_member_resources(resource_id)
-        for member_resource_type, member_resource_id in member_resources:
+    ) -> list[tuple[str, str, str]]:
+        """Handle member resource migration logic.
+
+        Returns a list of (resource_type, source_id, destination_id) for
+        each member resource that is (or was already) migrated.
+        """
+        member_specs = handler.get_member_resources(resource_id)
+        member_migrations: list[tuple[str, str, str]] = []
+
+        for member_resource_type, member_resource_id in member_specs:
             migrations = db_api.get_migrations(
                 source_id=member_resource_id,
                 resource_type=member_resource_type,
             )
             if migrations and migrations[0].status == constants.STATUS_COMPLETED:
+                dest_id = migrations[0].destination_id
+                member_migrations.append(
+                    (member_resource_type, member_resource_id, dest_id)
+                )
                 LOG.info(
                     "Member resource already migrated, skipping: %s %s",
                     member_resource_type,
@@ -188,7 +209,7 @@ class SunbeamMigrationManager:
                 member_resource_id,
             )
             try:
-                self.perform_individual_migration(
+                migration = self.perform_individual_migration(
                     member_resource_type,
                     member_resource_id,
                     cleanup_source=cleanup_source,
@@ -202,8 +223,20 @@ class SunbeamMigrationManager:
                     member_resource_id,
                     ex,
                 )
+                continue
 
-        return member_resources
+            if migration.destination_id:
+                member_migrations.append(
+                    (member_resource_type, member_resource_id, migration.destination_id)
+                )
+            else:
+                LOG.warning(
+                    "Member resource %s %s migrated but has no destination_id",
+                    member_resource_type,
+                    member_resource_id,
+                )
+
+        return member_migrations
 
     def _get_associated_resources(
         self,
