@@ -16,12 +16,24 @@ LOG = logging.getLogger(__name__)
 class RouterHandler(base.BaseMigrationHandler):
     """Handle Neutron router migrations."""
 
+    # -------------------------------------------------------------------------
+    # Basic metadata
+    # -------------------------------------------------------------------------
     def get_service_type(self) -> str:
         """Get the service type for this type of resource."""
         return "neutron"
 
+    def get_supported_resource_filters(self) -> list[str]:
+        """Get a list of supported resource filters."""
+        return ["owner_id"]
+
+    def get_implementation_status(self) -> str:
+        """Describe the implementation status."""
+        # Up to you; can be PARTIAL or COMPLETED depending on your policy.
+        return constants.IMPL_PARTIAL
+
     # -------------------------------------------------------------------------
-    # Dependencies (associated resources)
+    # Associated resources (dependencies)
     # -------------------------------------------------------------------------
     def get_associated_resource_types(self) -> list[str]:
         """Routers depend on their external gateway network.
@@ -39,50 +51,65 @@ class RouterHandler(base.BaseMigrationHandler):
         associated_resources: list[tuple[str, str]] = []
 
         egi = source_router.external_gateway_info or {}
-        network_ref = egi.get("network_id")
-        if network_ref:
-            associated_resources.append(("network", network_ref))
+        network_id = egi.get("network_id")
+        if network_id:
+            associated_resources.append(("network", network_id))
 
-        # NOTE: we intentionally do NOT add the external subnet here.
-        # It gets migrated as a member of the external network, which
-        # avoids a double-migration and the "overlaps with another subnet"
-        # error you hit.
-
+        # IMPORTANT:
+        # We intentionally DO NOT add the external subnet(s) here.
+        # They are migrated as members of the external network (via the
+        # network handler), and we resolve their destination IDs from the DB
+        # when building external_gateway_info.
         return associated_resources
 
     # -------------------------------------------------------------------------
-    # Members (internal interfaces)
+    # Member resources (internal interfaces)
     # -------------------------------------------------------------------------
     def get_member_resource_types(self) -> list[str]:
-        """Internal router members: both subnets and their networks."""
-        return ["network", "subnet"]
+        """Internal router members: their subnets.
+
+        The subnet handler will pull in the corresponding networks as deps.
+        """
+        return ["subnet"]
 
     def get_member_resources(self, resource_id: str) -> list[tuple[str, str]]:
-        """Return internal networks and subnets connected to this router."""
+        """Return internal subnets connected to this router.
+
+        We detect internal interfaces via Neutron ports with device_owner
+        starting with router-interface values (NOT the external gateway port).
+        """
         source_router = self._source_session.network.get_router(resource_id)
         if not source_router:
             raise exception.NotFound(f"Router not found: {resource_id}")
 
-        member_resources: list[tuple[str, str]] = []
-        for iface in getattr(source_router, "interfaces_info", []) or []:
-            subnet_id = iface.get("subnet_id")
-            port_network_id = iface.get("network_id")
-            # Some Neutron APIs provide iface["port_id"] instead of network_id,
-            # so we may need to resolve that if missing.
-            if not port_network_id and iface.get("port_id"):
-                port = self._source_session.network.get_port(iface["port_id"])
-                if port:
-                    port_network_id = port.network_id
+        member_subnet_ids: set[str] = set()
 
-            if port_network_id:
-                member_resources.append(("network", port_network_id))
-            if subnet_id:
-                member_resources.append(("subnet", subnet_id))
+        INTERNAL_OWNERS_PREFIXES = (
+            "network:router_interface",
+            "network:router_interface_distributed",
+            "network:ha_router_replicated_interface",
+        )
+
+        # Fetch all ports whose device_id == router.id
+        for port in self._source_session.network.ports(device_id=source_router.id):
+            owner = getattr(port, "device_owner", "") or ""
+            if not any(owner.startswith(prefix) for prefix in INTERNAL_OWNERS_PREFIXES):
+                # Skip gateway ports like 'network:router_gateway', etc.
+                continue
+
+            for ip in getattr(port, "fixed_ips", []) or []:
+                subnet_id = ip.get("subnet_id")
+                if subnet_id:
+                    member_subnet_ids.add(subnet_id)
+
+        member_resources: list[tuple[str, str]] = []
+        for subnet_id in member_subnet_ids:
+            member_resources.append(("subnet", subnet_id))
 
         return member_resources
 
     # -------------------------------------------------------------------------
-    # Helper: map source -> destination using the DB
+    # Helper: source -> destination mapping via DB
     # -------------------------------------------------------------------------
     def _get_destination_id_from_db(self, resource_type: str, source_id: str) -> str:
         """Return destination ID for a migrated resource from the DB."""
@@ -106,7 +133,7 @@ class RouterHandler(base.BaseMigrationHandler):
         return latest.destination_id
 
     # -------------------------------------------------------------------------
-    # Actual router migration
+    # Router migration itself
     # -------------------------------------------------------------------------
     def perform_individual_migration(
         self,
@@ -115,12 +142,9 @@ class RouterHandler(base.BaseMigrationHandler):
     ) -> str:
         """Migrate the specified router.
 
-        :param resource_id: The ID of the resource to migrate.
-        :param migrated_associated_resources: A list of tuples containing the
-            resource type, source ID, and destination ID of associated resources
-            that have already been migrated.
-
-        Return the resulting router id on the destination cloud.
+        :param resource_id: The ID of the router to migrate.
+        :param migrated_associated_resources: Tuples of
+            (resource_type, source_id, destination_id) for associated deps.
         """
         source_router = self._source_session.network.get_router(resource_id)
         if not source_router:
@@ -131,7 +155,7 @@ class RouterHandler(base.BaseMigrationHandler):
 
         egi = source_router.external_gateway_info or {}
         if egi:
-            # External network is an associated dependency of the router.
+            # External network is an associated dependency of the router
             src_net_id = egi.get("network_id")
             if src_net_id:
                 external_gateway_network_id = (
@@ -142,9 +166,9 @@ class RouterHandler(base.BaseMigrationHandler):
                     )
                 )
 
-            # External subnet(s) were migrated as members of that network.
-            # We look up their destination IDs from the DB.
-            for fixed_ip in egi.get("external_fixed_ips", []):
+            # External subnet(s) are migrated as members of that network;
+            # we look up their destination IDs from the DB.
+            for fixed_ip in egi.get("external_fixed_ips", []) or []:
                 src_subnet_id = fixed_ip.get("subnet_id")
                 if not src_subnet_id:
                     continue
@@ -158,14 +182,9 @@ class RouterHandler(base.BaseMigrationHandler):
                 ip_address = fixed_ip.get("ip_address")
                 if ip_address:
                     entry["ip_address"] = ip_address
-
                 external_gateway_fixed_ips.append(entry)
 
-        # Note: we no longer try to pre-compute internal interfaces here.
-        # Internal subnets are migrated separately as "members" and then
-        # attached in connect_member_resources_to_parent(), using their
-        # destination subnet IDs.
-
+        # Build kwargs from source router
         fields = [
             "availability_zone_hints",
             "description",
@@ -184,23 +203,22 @@ class RouterHandler(base.BaseMigrationHandler):
                 continue
 
             if field == "external_gateway_info":
+                if not egi:
+                    continue
+                new_egi = dict(egi)
                 if external_gateway_network_id:
-                    value = dict(value)  # make a shallow copy just in case
-                    value["network_id"] = external_gateway_network_id
+                    new_egi["network_id"] = external_gateway_network_id
                 if external_gateway_fixed_ips:
-                    value = dict(value)
-                    value["external_fixed_ips"] = external_gateway_fixed_ips
-
-                kwargs[field] = value
+                    new_egi["external_fixed_ips"] = external_gateway_fixed_ips
+                kwargs[field] = new_egi
             else:
                 kwargs[field] = value
 
         destination_router = self._destination_session.network.create_router(**kwargs)
-
         return destination_router.id
 
     # -------------------------------------------------------------------------
-    # Attach member subnets to the destination router
+    # Hook to connect members (internal subnets) to the migrated router
     # -------------------------------------------------------------------------
     def connect_member_resources_to_parent(
         self,
@@ -210,12 +228,12 @@ class RouterHandler(base.BaseMigrationHandler):
         """Connect internal member subnets to the destination router."""
         for resource_type, member_source_id in member_resources:
             if resource_type != "subnet":
+                # We only attach subnets; networks are handled as deps of subnets.
                 continue
 
             try:
                 dest_subnet_id = self._get_destination_id_from_db(
-                    "subnet",
-                    member_source_id,
+                    "subnet", member_source_id
                 )
             except exception.NotFound as ex:
                 LOG.error(
@@ -225,6 +243,13 @@ class RouterHandler(base.BaseMigrationHandler):
                     ex,
                 )
                 continue
+
+            LOG.info(
+                "Attaching internal subnet %s (dest %s) to router %s",
+                member_source_id,
+                dest_subnet_id,
+                parent_resource_id,
+            )
 
             try:
                 self._destination_session.network.add_interface_to_router(
@@ -239,31 +264,20 @@ class RouterHandler(base.BaseMigrationHandler):
                 )
 
     # -------------------------------------------------------------------------
-    # Source list + delete
+    # Source listing + delete
     # -------------------------------------------------------------------------
     def get_source_resource_ids(self, resource_filters: dict[str, str]) -> list[str]:
-        """Returns a list of resource ids based on the specified filters.
-
-        Raises an exception if any of the filters are unsupported.
-        """
+        """Returns a list of resource ids based on the specified filters."""
         self._validate_resource_filters(resource_filters)
 
         query_filters = {}
         if "owner_id" in resource_filters:
             query_filters["project_id"] = resource_filters["owner_id"]
 
-        resource_ids = []
-        for resource in self._source_session.network.routers(**query_filters):
-            resource_ids.append(resource.id)
-
+        resource_ids: list[str] = []
+        for router in self._source_session.network.routers(**query_filters):
+            resource_ids.append(router.id)
         return resource_ids
 
     def _delete_resource(self, resource_id: str, openstack_session):
         openstack_session.network.delete_router(resource_id, ignore_missing=True)
-
-    def get_supported_resource_filters(self) -> list[str]:
-        """Get a list of supported resource filters.
-
-        These filters can be specified when initiating batch migrations.
-        """
-        return ["owner_id"]
