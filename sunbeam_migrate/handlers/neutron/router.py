@@ -58,7 +58,7 @@ class RouterHandler(base.BaseMigrationHandler):
 
         The migrations can cascade to contained resources.
         """
-        return ["network", "subnet"]
+        return ["subnet"]
 
     def get_member_resources(self, resource_id):
         """Return the networks and subnets that belong to this router."""
@@ -119,27 +119,6 @@ class RouterHandler(base.BaseMigrationHandler):
                         "ip_address": fixed_ip.get("ip_address"),
                     }
                 )
-
-        internal_interfaces = []
-        for iface in getattr(source_router, "interfaces_info", []):
-            src_subnet_id = iface.get("subnet_id")
-            if not src_subnet_id:
-                continue
-            dest_subnet_id = self._get_associated_resource_destination_id(
-                "subnet",
-                src_subnet_id,
-                migrated_associated_resources,
-            )
-
-            src_port_id = iface.get("port_id")
-            if not src_port_id:
-                continue
-            dest_port_id = self._get_associated_resource_destination_id(
-                "network",
-                src_port_id,
-                migrated_associated_resources,
-            )
-            internal_interfaces.append((src_port_id, dest_port_id))
 
         fields = [
             "availability_zone_hints",
