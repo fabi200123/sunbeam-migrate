@@ -36,7 +36,7 @@ class RouterHandler(base.BaseMigrationHandler):
         if not source_router:
             raise exception.NotFound(f"Router not found: {resource_id}")
 
-        associated_resources = []
+        associated_resources: list[tuple[str, str]] = []
 
         external_gateway_info = (
             getattr(source_router, "external_gateway_info", None) or {}
