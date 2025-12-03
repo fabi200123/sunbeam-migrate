@@ -151,9 +151,6 @@ def test_migrate_router_with_dependencies_and_members(
     # Verify migrated router
     dest_router = test_destination_session.network.find_router(router.name)
     assert dest_router, "couldn't find migrated router"
-    request.addfinalizer(
-        lambda: test_destination_session.network.delete_router(dest_router.id)
-    )
 
     _check_migrated_router(router, dest_router)
 
@@ -167,11 +164,6 @@ def test_migrate_router_with_dependencies_and_members(
     dest_external_network = test_destination_session.network.get_network(
         dest_external_network_id
     )
-    request.addfinalizer(
-        lambda: test_destination_session.network.delete_network(
-            dest_external_network.id
-        )
-    )
 
     # Verify external subnet was migrated as dependency
     dest_external_fixed_ips = dest_external_gateway_info.get("external_fixed_ips", [])
@@ -182,9 +174,6 @@ def test_migrate_router_with_dependencies_and_members(
 
     dest_external_subnet = test_destination_session.network.get_subnet(
         dest_external_subnet_id
-    )
-    request.addfinalizer(
-        lambda: test_destination_session.network.delete_subnet(dest_external_subnet.id)
     )
 
     # Verify internal subnet was migrated as member
@@ -216,22 +205,37 @@ def test_migrate_router_with_dependencies_and_members(
         "internal subnet not attached to router"
     )
 
-    # Cleanup: detach internal subnet from router before deleting
-    request.addfinalizer(
-        lambda: test_destination_session.network.remove_interface_from_router(
-            dest_router.id, subnet_id=dest_internal_subnet_id
-        )
-    )
-
     # Cleanup: delete the migrated internal network and subnet
     dest_internal_network_id = test_utils.get_destination_resource_id(
         test_config_path, "network", internal_network.id
+    )
+
+    request.addfinalizer(
+        lambda: test_destination_session.network.delete_network(
+            dest_internal_network_id
+        )
+    )
+    request.addfinalizer(
+        lambda: test_destination_session.network.delete_network(
+            dest_external_network.id
+        )
     )
     request.addfinalizer(
         lambda: test_destination_session.network.delete_subnet(dest_internal_subnet_id)
     )
     request.addfinalizer(
-        lambda: test_destination_session.network.delete_network(
-            dest_internal_network_id
+        lambda: test_destination_session.network.delete_subnet(dest_external_subnet.id)
+    )
+    request.addfinalizer(
+        lambda: test_destination_session.network.delete_router(dest_router.id)
+    )
+    request.addfinalizer(
+        lambda: test_destination_session.network.remove_gateway_from_router(
+            dest_router.id
+        )
+    )
+    request.addfinalizer(
+        lambda: test_destination_session.network.remove_interface_from_router(
+            dest_router.id, subnet_id=dest_internal_subnet_id
         )
     )
