@@ -44,6 +44,7 @@ class SunbeamMigrateConfig(BaseModel):
     # Defaults to "false" for increased compatibility.
     preserve_volume_availability_zone: bool | None = False
     volume_upload_timeout: int = 1800
+    load_balancer_migration_timeout: int = 300
 
     def load_config(self, path: Path):
         """Load the configuration from the specified file."""
