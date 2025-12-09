@@ -26,6 +26,7 @@ MIGRATION_HANDLERS = {
     # Nova handlers
     "flavor": "sunbeam_migrate.handlers.nova.flavor.FlavorHandler",
     # Neutron handlers
+    "floating-ip": "sunbeam_migrate.handlers.neutron.floating_ip.FloatingIPHandler",
     "router": "sunbeam_migrate.handlers.neutron.router.RouterHandler",
     "network": "sunbeam_migrate.handlers.neutron.network.NetworkHandler",
     "subnet": "sunbeam_migrate.handlers.neutron.subnet.SubnetHandler",
