@@ -166,16 +166,15 @@ def _cleanup_destination_load_balancer(session, lb_id):
                             interval=2,
                             wait=CONF.load_balancer_migration_timeout,
                         )
+                    except openstack_exc.NotFoundException:
+                        pass
                     except Exception as exc:
-                        if exc is openstack_exc.NotFoundException:
-                            pass
-                        else:
-                            LOG.warning(
-                                "Failed deleting member %s from pool %s: %s",
-                                getattr(member, "id", "<unknown>"),
-                                pool.id,
-                                exc,
-                            )
+                        LOG.warning(
+                            "Failed deleting member %s from pool %s: %s",
+                            getattr(member, "id", "<unknown>"),
+                            pool.id,
+                            exc,
+                        )
                 try:
                     session.load_balancer.delete_pool(pool.id, ignore_missing=True)
                     session.load_balancer.wait_for_load_balancer(
@@ -185,13 +184,12 @@ def _cleanup_destination_load_balancer(session, lb_id):
                         interval=2,
                         wait=CONF.load_balancer_migration_timeout,
                     )
+                except openstack_exc.NotFoundException:
+                    pass
                 except Exception as exc:
-                    if exc is openstack_exc.NotFoundException:
-                        pass
-                    else:
-                        LOG.warning(
-                            "Failed deleting pool %s during cleanup: %s", pool.id, exc
-                        )
+                    LOG.warning(
+                        "Failed deleting pool %s during cleanup: %s", pool.id, exc
+                    )
         try:
             session.load_balancer.delete_listener(listener.id, ignore_missing=True)
             session.load_balancer.wait_for_load_balancer(
@@ -201,15 +199,14 @@ def _cleanup_destination_load_balancer(session, lb_id):
                 interval=2,
                 wait=CONF.load_balancer_migration_timeout,
             )
+        except openstack_exc.NotFoundException:
+            pass
         except Exception as exc:
-            if exc is openstack_exc.NotFoundException:
-                pass
-            else:
-                LOG.warning(
-                    "Failed deleting listener %s during cleanup: %s",
-                    getattr(listener, "id", "<unknown>"),
-                    exc,
-                )
+            LOG.warning(
+                "Failed deleting listener %s during cleanup: %s",
+                getattr(listener, "id", "<unknown>"),
+                exc,
+            )
 
     session.load_balancer.delete_load_balancer(lb_id, ignore_missing=True, cascade=True)
     try:
@@ -220,39 +217,38 @@ def _cleanup_destination_load_balancer(session, lb_id):
             interval=2,
             wait=CONF.load_balancer_migration_timeout,
         )
+    except openstack_exc.NotFoundException:
+        pass
     except Exception as exc:
-        if exc is openstack_exc.NotFoundException:
-            pass
-        else:
-            LOG.warning(
-                "Failed waiting for load balancer %s deletion; resources may leak: %s",
-                lb_id,
-                exc,
-            )
+        LOG.warning(
+            "Failed waiting for load balancer %s deletion; resources may leak: %s",
+            lb_id,
+            exc,
+        )
 
 
 def _cleanup_ports(session, network_id: str):
     """Delete leftover neutron ports on the given network."""
     try:
         ports = list(session.network.ports(network_id=network_id))
+    except openstack_exc.NotFoundException:
+        return
     except Exception as exc:
-        if exc is openstack_exc.NotFoundException:
-            return
         LOG.warning("Failed listing ports on network %s: %s", network_id, exc)
         return
+
     for port in ports:
         try:
             session.network.delete_port(port.id, ignore_missing=True)
+        except openstack_exc.NotFoundException:
+            pass
         except Exception as exc:
-            if exc is openstack_exc.NotFoundException:
-                pass
-            else:
-                LOG.warning(
-                    "Failed deleting port %s on network %s; may be leaked: %s",
-                    getattr(port, "id", "<unknown>"),
-                    network_id,
-                    exc,
-                )
+            LOG.warning(
+                "Failed deleting port %s on network %s; may be leaked: %s",
+                getattr(port, "id", "<unknown>"),
+                network_id,
+                exc,
+            )
 
 
 def test_migrate_simple_load_balancer_and_cleanup(
