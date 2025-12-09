@@ -29,7 +29,7 @@ class LoadBalancerHandler(base.BaseMigrationHandler):
 
         Associated resources must be migrated first.
         """
-        return ["network", "subnet"]
+        return ["network", "subnet", "floating-ip"]
 
     def get_associated_resources(self, resource_id: str) -> list[tuple[str, str]]:
         """Return the source resources this loadbalancer depends on."""
@@ -47,6 +47,16 @@ class LoadBalancerHandler(base.BaseMigrationHandler):
             associated_resources.append(
                 ("network", source_load_balancer.vip_network_id)
             )
+
+        if source_load_balancer.vip_port_id:
+            for floating_ip in self._source_session.network.ips(
+                port_id=source_load_balancer.vip_port_id
+            ):
+                floating_ip_id = getattr(floating_ip, "id", None)
+                if floating_ip_id and ("floating-ip", floating_ip_id) not in (
+                    associated_resources
+                ):
+                    associated_resources.append(("floating-ip", floating_ip_id))
 
         # Collect member subnets from any default pools attached to listeners
         for listener in self._source_session.load_balancer.listeners(
@@ -132,6 +142,10 @@ class LoadBalancerHandler(base.BaseMigrationHandler):
             failures=["ERROR"],
             interval=2,
             wait=CONF.load_balancer_migration_timeout,
+        )
+
+        self._attach_destination_floating_ips(
+            source_lb, dest_lb_id, migrated_associated_resources
         )
 
         listener_id_map = {}
@@ -452,3 +466,55 @@ class LoadBalancerHandler(base.BaseMigrationHandler):
             dest_hm.id,
             source_hm.id,
         )
+
+    def _attach_destination_floating_ips(
+        self,
+        source_lb,
+        dest_lb_id: str,
+        migrated_associated_resources: list[tuple[str, str, str]],
+    ) -> None:
+        """Attach migrated floating IPs to the destination load balancer VIP port."""
+        if not source_lb.vip_port_id:
+            return
+
+        dest_lb = self._destination_session.load_balancer.get_load_balancer(dest_lb_id)
+        dest_vip_port_id = getattr(dest_lb, "vip_port_id", None)
+        if not dest_lb or not dest_vip_port_id:
+            LOG.warning(
+                "Destination load balancer %s missing vip_port_id, skipping floating IP attachment",
+                dest_lb_id,
+            )
+            return
+
+        for floating_ip in self._source_session.network.ips(
+            port_id=source_lb.vip_port_id
+        ):
+            floating_ip_id = getattr(floating_ip, "id", None)
+            if not floating_ip_id:
+                continue
+
+            try:
+                dest_floating_ip_id = self._get_associated_resource_destination_id(
+                    "floating-ip",
+                    floating_ip_id,
+                    migrated_associated_resources,
+                )
+            except exception.NotFound:
+                LOG.warning(
+                    "Floating IP %s not found among migrated dependencies; skipping attachment",
+                    floating_ip_id,
+                )
+                continue
+
+            update_kwargs = {"port_id": dest_vip_port_id}
+            if getattr(dest_lb, "vip_address", None):
+                update_kwargs["fixed_ip_address"] = dest_lb.vip_address
+
+            self._destination_session.network.update_ip(
+                dest_floating_ip_id, **update_kwargs
+            )
+            LOG.info(
+                "Attached floating IP %s to destination load balancer VIP port %s",
+                dest_floating_ip_id,
+                dest_vip_port_id,
+            )
