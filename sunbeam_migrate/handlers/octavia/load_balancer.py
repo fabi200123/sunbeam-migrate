@@ -29,7 +29,7 @@ class LoadBalancerHandler(base.BaseMigrationHandler):
 
         Associated resources must be migrated first.
         """
-        return ["network", "subnet", "floating-ip"]
+        return ["network", "subnet", "floating-ip", "router"]
 
     def get_associated_resources(self, resource_id: str) -> list[tuple[str, str]]:
         """Return the source resources this loadbalancer depends on."""
@@ -57,6 +57,10 @@ class LoadBalancerHandler(base.BaseMigrationHandler):
                     associated_resources
                 ):
                     associated_resources.append(("floating-ip", floating_ip_id))
+
+                router_id = getattr(floating_ip, "router_id", None)
+                if router_id and ("router", router_id) not in associated_resources:
+                    associated_resources.append(("router", router_id))
 
         # Collect member subnets from any default pools attached to listeners
         for listener in self._source_session.load_balancer.listeners(
@@ -477,6 +481,17 @@ class LoadBalancerHandler(base.BaseMigrationHandler):
         if not source_lb.vip_port_id:
             return
 
+        dest_vip_subnet_id = None
+        if source_lb.vip_subnet_id:
+            try:
+                dest_vip_subnet_id = self._get_associated_resource_destination_id(
+                    "subnet",
+                    source_lb.vip_subnet_id,
+                    migrated_associated_resources,
+                )
+            except exception.NotFound:
+                dest_vip_subnet_id = None
+
         dest_lb = self._destination_session.load_balancer.get_load_balancer(dest_lb_id)
         dest_vip_port_id = getattr(dest_lb, "vip_port_id", None)
         if not dest_lb or not dest_vip_port_id:
@@ -492,6 +507,31 @@ class LoadBalancerHandler(base.BaseMigrationHandler):
             floating_ip_id = getattr(floating_ip, "id", None)
             if not floating_ip_id:
                 continue
+
+            router_id = getattr(floating_ip, "router_id", None)
+            if router_id and dest_vip_subnet_id:
+                try:
+                    dest_router_id = self._get_associated_resource_destination_id(
+                        "router",
+                        router_id,
+                        migrated_associated_resources,
+                    )
+                    self._destination_session.network.add_interface_to_router(
+                        dest_router_id, subnet_id=dest_vip_subnet_id
+                    )
+                except exception.NotFound:
+                    LOG.warning(
+                        "Router %s for floating IP %s not found among migrated dependencies",
+                        router_id,
+                        floating_ip_id,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    LOG.warning(
+                        "Failed adding subnet %s to router %s on destination: %r",
+                        dest_vip_subnet_id,
+                        router_id,
+                        exc,
+                    )
 
             try:
                 dest_floating_ip_id = self._get_associated_resource_destination_id(
