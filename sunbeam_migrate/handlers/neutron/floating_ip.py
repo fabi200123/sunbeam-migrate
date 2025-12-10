@@ -2,11 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import ipaddress
+import logging
 
 from sunbeam_migrate import config, exception
 from sunbeam_migrate.handlers import base
 
 CONF = config.get_config()
+LOG = logging.getLogger()
 
 
 class FloatingIPHandler(base.BaseMigrationHandler):
@@ -50,6 +52,7 @@ class FloatingIPHandler(base.BaseMigrationHandler):
             try:
                 floating_ip_addr = ipaddress.ip_address(floating_ip)
             except ValueError:
+                LOG.error("Unable to parse FIP address: %s", floating_ip)
                 floating_ip_addr = None
 
         if floating_ip_addr:
@@ -69,6 +72,12 @@ class FloatingIPHandler(base.BaseMigrationHandler):
                     # but requires a subnet based on the IP address.
                     subnet_ids.add(subnet.id)
                     break
+                else:
+                    LOG.warning(
+                        "Unable to find subnet for floating IP %s in network %s",
+                        floating_ip,
+                        floating_network_id,
+                    )
 
         for subnet_id in sorted(subnet_ids):
             associated_resources.append(("subnet", subnet_id))
@@ -106,7 +115,7 @@ class FloatingIPHandler(base.BaseMigrationHandler):
         )
 
         dest_subnet_id = None
-        if getattr(source_fip, "subnet_id", None):
+        if source_fip.subnet_id:
             try:
                 dest_subnet_id = self._get_associated_resource_destination_id(
                     "subnet",
@@ -117,11 +126,14 @@ class FloatingIPHandler(base.BaseMigrationHandler):
                 dest_subnet_id = None
 
         dest_port_id = None
-        if getattr(source_fip, "port_id", None):
-            dest_port = self._destination_session.network.find_port(
+        if source_fip.port_id:
+            source_port = self._source_session.network.find_port(
                 source_fip.port_id, ignore_missing=True
             )
-            if dest_port:
+            if source_port.get("name"):
+                dest_port = self._destination_session.network.find_port(
+                    name_or_id=source_port.get("name"), ignore_missing=True
+                )
                 dest_port_id = dest_port.id
 
         fields = [
@@ -129,7 +141,6 @@ class FloatingIPHandler(base.BaseMigrationHandler):
             "dns_domain",
             "dns_name",
             "floating_ip_address",
-            "qos_policy_id",
         ]
         kwargs = {}
         for field in fields:

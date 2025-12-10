@@ -2,24 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from sunbeam_migrate.tests.integration import utils as test_utils
-
-
-def _create_external_network(session):
-    network = session.network.create_network(
-        name=test_utils.get_test_resource_name(),
-        is_router_external=True,
-    )
-    return session.network.get_network(network.id)
-
-
-def _create_external_subnet(session, network):
-    subnet = session.network.create_subnet(
-        network_id=network.id,
-        ip_version=4,
-        cidr="198.51.100.0/24",
-        name=test_utils.get_test_resource_name(),
-    )
-    return session.network.get_subnet(subnet.id)
+from sunbeam_migrate.tests.integration.handlers.neutron import utils as neutron_utils
 
 
 def _create_floating_ip(session, network, subnet):
@@ -63,12 +46,12 @@ def test_migrate_floating_ip_with_dependencies_and_cleanup(
     test_source_session,
     test_destination_session,
 ):
-    external_network = _create_external_network(test_source_session)
+    external_network = neutron_utils.create_test_network(test_source_session, is_router_external=True)
     request.addfinalizer(
         lambda: test_source_session.network.delete_network(external_network.id)
     )
 
-    external_subnet = _create_external_subnet(test_source_session, external_network)
+    external_subnet = neutron_utils.create_test_subnet(test_source_session, external_network)
     request.addfinalizer(
         lambda: test_source_session.network.delete_subnet(external_subnet.id)
     )
@@ -137,13 +120,13 @@ def test_migrate_floating_ip_batch_with_filter(
     subnets = []
 
     for _ in range(2):
-        network = _create_external_network(test_source_session)
+        network = neutron_utils.create_test_network(test_source_session, is_router_external=True)
         networks.append(network)
         request.addfinalizer(
             lambda net_id=network.id: test_source_session.network.delete_network(net_id)
         )
 
-        subnet = _create_external_subnet(test_source_session, network)
+        subnet = neutron_utils.create_test_subnet(test_source_session, network)
         subnets.append(subnet)
         request.addfinalizer(
             lambda subnet_id=subnet.id: test_source_session.network.delete_subnet(
