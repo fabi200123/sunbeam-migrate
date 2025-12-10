@@ -119,4 +119,34 @@ class SubnetHandler(base.BaseMigrationHandler):
         return resource_ids
 
     def _delete_resource(self, resource_id: str, openstack_session):
+        """Delete subnet and clear dependent ports/interfaces to avoid conflicts."""
+        # Remove or delete any ports that still reference this subnet
+        try:
+            ports = list(openstack_session.network.ports(fixed_ips="subnet_id=%s" % resource_id))
+        except Exception:
+            ports = []
+
+        for port in ports:
+            owner = getattr(port, "device_owner", "") or ""
+            port_id = getattr(port, "id", None)
+            if not port_id:
+                continue
+
+            # If this is a router interface, detach it first
+            if owner.startswith("network:router_interface"):
+                router_id = getattr(port, "device_id", None)
+                if router_id:
+                    try:
+                        openstack_session.network.remove_interface_from_router(
+                            router_id, subnet_id=resource_id
+                        )
+                    except Exception:
+                        # Best-effort: continue to delete the port
+                        pass
+            try:
+                openstack_session.network.delete_port(port_id, ignore_missing=True)
+            except Exception:
+                # Best-effort: continue with subnet deletion
+                pass
+
         openstack_session.network.delete_subnet(resource_id, ignore_missing=True)
