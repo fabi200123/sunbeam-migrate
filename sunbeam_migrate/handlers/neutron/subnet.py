@@ -3,6 +3,7 @@
 
 from sunbeam_migrate import config, exception
 from sunbeam_migrate.handlers import base
+from sunbeam_migrate.main import LOG
 
 CONF = config.get_config()
 
@@ -120,4 +121,9 @@ class SubnetHandler(base.BaseMigrationHandler):
         return resource_ids
 
     def _delete_resource(self, resource_id: str, openstack_session):
-        openstack_session.network.delete_subnet(resource_id, ignore_missing=True)
+        try:
+            openstack_session.network.delete_subnet(resource_id, ignore_missing=True)
+        except Exception:
+            # TODO: stop suppressing this once we include a flag along with
+            # the resource dependencies, specifying which ones can be deleted.
+            LOG.warning("Unable to delete subnet, it's probably still in use.")
