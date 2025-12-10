@@ -116,14 +116,11 @@ class FloatingIPHandler(base.BaseMigrationHandler):
 
         dest_subnet_id = None
         if source_fip.subnet_id:
-            try:
-                dest_subnet_id = self._get_associated_resource_destination_id(
-                    "subnet",
-                    source_fip.subnet_id,
-                    migrated_associated_resources,
-                )
-            except exception.NotFound:
-                dest_subnet_id = None
+            dest_subnet_id = self._get_associated_resource_destination_id(
+                "subnet",
+                source_fip.subnet_id,
+                migrated_associated_resources,
+            )
 
         dest_port_id = None
         if source_fip.port_id:
@@ -134,7 +131,7 @@ class FloatingIPHandler(base.BaseMigrationHandler):
                 dest_port = self._destination_session.network.find_port(
                     name_or_id=source_port.get("name"), ignore_missing=True
                 )
-                dest_port_id = dest_port.id
+                dest_port_id = dest_port.get("id")
 
         fields = [
             "description",
