@@ -1,12 +1,13 @@
 # SPDX-FileCopyrightText: 2025 - Canonical Ltd
 # SPDX-License-Identifier: Apache-2.0
 
+import logging
+
 from sunbeam_migrate import config, exception
 from sunbeam_migrate.handlers import base
-from sunbeam_migrate.main import LOG
 
 CONF = config.get_config()
-
+LOG = logging.getLogger()
 
 class SubnetHandler(base.BaseMigrationHandler):
     """Handle Barbican secret container migrations."""

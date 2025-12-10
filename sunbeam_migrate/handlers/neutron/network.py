@@ -1,10 +1,13 @@
 # SPDX-FileCopyrightText: 2025 - Canonical Ltd
 # SPDX-License-Identifier: Apache-2.0
 
+import logging
+
 from sunbeam_migrate import config, exception
 from sunbeam_migrate.handlers import base
 
 CONF = config.get_config()
+LOG = logging.getLogger()
 
 
 class NetworkHandler(base.BaseMigrationHandler):
@@ -110,4 +113,9 @@ class NetworkHandler(base.BaseMigrationHandler):
         return resource_ids
 
     def _delete_resource(self, resource_id: str, openstack_session):
-        openstack_session.network.delete_network(resource_id, ignore_missing=True)
+        try:
+            openstack_session.network.delete_network(resource_id, ignore_missing=True)
+        except Exception:
+            # TODO: stop suppressing this once we include a flag along with
+            # the resource dependencies, specifying which ones can be deleted.
+            LOG.warning("Unable to delete subnet, it's probably still in use.")

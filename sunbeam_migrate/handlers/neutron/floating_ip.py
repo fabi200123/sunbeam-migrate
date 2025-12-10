@@ -131,7 +131,8 @@ class FloatingIPHandler(base.BaseMigrationHandler):
                 dest_port = self._destination_session.network.find_port(
                     name_or_id=source_port.get("name"), ignore_missing=True
                 )
-                dest_port_id = dest_port.get("id")
+                if dest_port:
+                    dest_port_id = dest_port.id
 
         fields = [
             "description",
