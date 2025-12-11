@@ -122,18 +122,6 @@ class FloatingIPHandler(base.BaseMigrationHandler):
                 migrated_associated_resources,
             )
 
-        dest_port_id = None
-        if source_fip.port_id:
-            source_port = self._source_session.network.find_port(
-                source_fip.port_id, ignore_missing=True
-            )
-            if source_port.get("name"):
-                dest_port = self._destination_session.network.find_port(
-                    name_or_id=source_port.get("name"), ignore_missing=True
-                )
-                if dest_port:
-                    dest_port_id = dest_port.id
-
         fields = [
             "description",
             "dns_domain",
@@ -149,12 +137,6 @@ class FloatingIPHandler(base.BaseMigrationHandler):
         kwargs["floating_network_id"] = destination_network_id
         if dest_subnet_id:
             kwargs["subnet_id"] = dest_subnet_id
-
-        # Preserve bindings if the destination port already exists.
-        if dest_port_id:
-            kwargs["port_id"] = dest_port_id
-            if getattr(source_fip, "fixed_ip_address", None):
-                kwargs["fixed_ip_address"] = source_fip.fixed_ip_address
 
         destination_fip = self._destination_session.network.create_ip(**kwargs)
         return destination_fip.id
