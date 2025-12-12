@@ -337,6 +337,27 @@ The migration process:
 5. **Creates health monitors** for pools that have them
 6. **Creates members** in each pool with their subnet mappings
 
+## Migrating DNS zones and records
+
+Designate zones can be migrated with `--resource-type=dns-zone`. The handler creates (or reuses) the zone on the destination cloud and synchronizes all recordsets from the source, skipping SOA and apex NS records. Secondary zones are created but recordsets are not modified because they are managed by their masters.
+
+```
+$ sunbeam-migrate start --resource-type=dns-zone 3f97d206-04fc-4dea-9722-7ea1e4489373
+2025-12-09 10:12:05,271 INFO Initiating dns-zone migration, resource id: 3f97d206-04fc-4dea-9722-7ea1e4489373
+2025-12-09 10:12:11,144 INFO Created DNS zone 5eb6c67c-6d56-4f76-9617-29f7452cdedb on destination (source id: 3f97d206-04fc-4dea-9722-7ea1e4489373)
+2025-12-09 10:12:15,874 INFO Creating destination recordset www.example.org. (A) in zone 5eb6c67c-6d56-4f76-9617-29f7452cdedb
+2025-12-09 10:12:18,219 INFO Creating destination recordset api.example.org. (CNAME) in zone 5eb6c67c-6d56-4f76-9617-29f7452cdedb
+2025-12-09 10:12:24,542 INFO Successfully migrated resource, destination id: 5eb6c67c-6d56-4f76-9617-29f7452cdedb
+```
+
+Batch migrations support the `owner-id` and `name` filters:
+
+```
+$ sunbeam-migrate start-batch --resource-type=dns-zone --filter "owner-id:7bbbe53ff70d4e128b7c7e80d9afec21"
+```
+
+Use `--cleanup-source` if you also need to delete the source zone and its records after a successful migration.
+
 ## Registering external migrations
 
 `sunbeam-migrate` normally creates exact copies of the migrated resources. This isn't always
