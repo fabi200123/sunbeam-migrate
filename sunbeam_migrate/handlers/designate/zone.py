@@ -22,7 +22,7 @@ class ZoneHandler(base.BaseMigrationHandler):
 
         These filters can be specified when initiating batch migrations.
         """
-        return ["owner_id"]
+        return ["project_id"]
 
     def get_associated_resource_types(self) -> list[str]:
         """DNS zones have no prerequisite resources."""
@@ -69,8 +69,8 @@ class ZoneHandler(base.BaseMigrationHandler):
         self._validate_resource_filters(resource_filters)
 
         query_filters: dict[str, str] = {}
-        if "owner_id" in resource_filters:
-            query_filters["project_id"] = resource_filters["owner_id"]
+        if "project_id" in resource_filters:
+            query_filters["project_id"] = resource_filters["project_id"]
 
         resource_ids = []
         for resource in self._source_session.dns.zones(**query_filters):
