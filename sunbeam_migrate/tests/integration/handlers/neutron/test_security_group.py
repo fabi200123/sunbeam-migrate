@@ -39,6 +39,7 @@ def test_migrate_security_group(
     test_credentials,
     test_source_session,
     test_destination_session,
+    test_owner_source_project,
 ):
     sg = neutron_utils.create_test_security_group(test_source_session)
     request.addfinalizer(
@@ -46,7 +47,14 @@ def test_migrate_security_group(
     )
 
     test_utils.call_migrate(
-        test_config_path, ["start", "--resource-type=security-group", sg.id]
+        test_config_path,
+        [
+            "start-batch",
+            "--resource-type=security-group",
+            "--include-dependencies",
+            "--filter",
+            f"project-id:{test_owner_source_project.id}",
+        ],
     )
 
     dest_sg = test_destination_session.network.find_security_group(sg.name)
@@ -73,6 +81,7 @@ def test_migrate_security_group_and_cleanup(
     test_credentials,
     test_source_session,
     test_destination_session,
+    test_owner_source_project,
 ):
     sg = neutron_utils.create_test_security_group(test_source_session)
     request.addfinalizer(
@@ -81,7 +90,14 @@ def test_migrate_security_group_and_cleanup(
 
     test_utils.call_migrate(
         test_config_path,
-        ["start", "--resource-type=security-group", "--cleanup-source", sg.id],
+        [
+            "start-batch",
+            "--resource-type=security-group",
+            "--include-dependencies",
+            "--cleanup-source",
+            "--filter",
+            f"project-id:{test_owner_source_project.id}",
+        ],
     )
 
     dest_sg = test_destination_session.network.find_security_group(sg.name)
@@ -103,6 +119,7 @@ def test_migrate_security_group_with_members(
     test_credentials,
     test_source_session,
     test_destination_session,
+    test_owner_source_project,
 ):
     sg = neutron_utils.create_test_security_group(test_source_session)
     request.addfinalizer(
@@ -117,10 +134,12 @@ def test_migrate_security_group_with_members(
     test_utils.call_migrate(
         test_config_path,
         [
-            "start",
+            "start-batch",
             "--resource-type=security-group",
+            "--include-dependencies",
             "--include-members",
-            sg.id,
+            "--filter",
+            f"project-id:{test_owner_source_project.id}",
         ],
     )
 
@@ -154,6 +173,7 @@ def test_migrate_security_group_rule_and_cleanup(
     test_credentials,
     test_source_session,
     test_destination_session,
+    test_owner_source_project,
 ):
     sg = neutron_utils.create_test_security_group(test_source_session)
     request.addfinalizer(
@@ -168,11 +188,12 @@ def test_migrate_security_group_rule_and_cleanup(
     test_utils.call_migrate(
         test_config_path,
         [
-            "start",
+            "start-batch",
             "--resource-type=security-group-rule",
             "--include-dependencies",
             "--cleanup-source",
-            rule.id,
+            "--filter",
+            f"project-id:{test_owner_source_project.id}",
         ],
     )
 

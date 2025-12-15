@@ -3,9 +3,10 @@
 
 import logging
 
-from sunbeam_migrate import exception
+from sunbeam_migrate import config, exception
 from sunbeam_migrate.handlers import base
 
+CONF = config.get_config()
 LOG = logging.getLogger()
 
 
@@ -29,7 +30,10 @@ class PortHandler(base.BaseMigrationHandler):
         Ports depend on networks, subnets, and security groups,
         which must be migrated first.
         """
-        return ["network", "subnet", "security-group"]
+        types = ["network", "subnet", "security-group"]
+        if CONF.multitenant_mode:
+            types.append("project")
+        return types
 
     def get_associated_resources(self, resource_id: str) -> list[base.Resource]:
         """Return the source resources this port depends on."""
@@ -37,7 +41,10 @@ class PortHandler(base.BaseMigrationHandler):
         if not source_port:
             raise exception.NotFound(f"Port not found: {resource_id}")
 
-        associated_resources = []
+        associated_resources: list[base.Resource] = []
+        self._report_identity_dependencies(
+            associated_resources, project_id=source_port.project_id
+        )
         if source_port.network_id:
             associated_resources.append(
                 base.Resource(resource_type="network", source_id=source_port.network_id)
@@ -55,10 +62,6 @@ class PortHandler(base.BaseMigrationHandler):
         # Add security groups as associated resources
         security_group_ids = source_port.security_group_ids or []
         for sg_id in security_group_ids:
-            source_sg = self._source_session.network.get_security_group(sg_id)
-            if source_sg.name == "default":
-                LOG.info("Skipping default security group rule.")
-                continue
             associated_resources.append(
                 base.Resource(resource_type="security-group", source_id=sg_id)
             )
@@ -121,9 +124,6 @@ class PortHandler(base.BaseMigrationHandler):
         # Map security group IDs from source to destination
         destination_security_group_ids = []
         for sg_id in source_port.security_group_ids:
-            source_sg = self._source_session.network.get_security_group(sg_id)
-            if source_sg.name == "default":
-                continue
             dest_sg_id = self._get_associated_resource_destination_id(
                 "security-group",
                 sg_id,
@@ -150,6 +150,12 @@ class PortHandler(base.BaseMigrationHandler):
             kwargs["security_group_ids"] = destination_security_group_ids
         if destination_fixed_ips:
             kwargs["fixed_ips"] = destination_fixed_ips
+
+        identity_kwargs = self._get_identity_build_kwargs(
+            migrated_associated_resources,
+            source_project_id=source_port.project_id,
+        )
+        kwargs.update(identity_kwargs)
 
         destination_port = self._destination_session.network.create_port(**kwargs)
         return destination_port.id

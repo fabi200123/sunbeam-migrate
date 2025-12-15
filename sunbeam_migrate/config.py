@@ -34,6 +34,11 @@ class SunbeamMigrateConfig(BaseModel):
     database_file: Path = Path(
         os.path.expandvars("$HOME/.local/share/sunbeam-migrate/sqlite.db")
     )
+    # The multitenant mode allows identifying and migrating resources owned by
+    # another tenant. This requires admin privileges.
+    # The identity resources (domain, project, user) will be treated as
+    # dependencies and migrated automatically if "--include-dependencies" is set.
+    multitenant_mode: bool = True
     image_transfer_chunk_size: int = 32 * 1024 * 1024  # 32MB
     # Timeout for load balancer provisioning during migration.
     load_balancer_migration_timeout: int = 300
@@ -62,6 +67,14 @@ class SunbeamMigrateConfig(BaseModel):
     # share that's being migrated. If not provided, it will be detected
     # automatically.
     manila_local_access_ip: str | None = None
+
+    # The name of the "member" Keystone role. When migrating certain resources
+    # to other tenants (e.g. instances, volumes, shares), we need to a project
+    # scoped session using the destination project.
+    #
+    # sunbeam-migrate will transparently assign the member role to the user
+    # that initiated the migration.
+    member_role_name: str = "member"
 
     def load_config(self, path: Path):
         """Load the configuration from the specified file."""

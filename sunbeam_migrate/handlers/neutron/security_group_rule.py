@@ -25,22 +25,28 @@ class SecurityGroupRuleHandler(base.BaseMigrationHandler):
 
         These filters can be specified when initiating batch migrations.
         """
-        return ["owner_id"]
+        return ["project_id"]
 
     def get_associated_resource_types(self) -> list[str]:
         """Security group rules depend on their security group."""
-        return ["security-group"]
+        types = ["security-group"]
+        if CONF.multitenant_mode:
+            types.append("project")
+        return types
 
     def get_associated_resources(self, resource_id: str) -> list[base.Resource]:
         """Return the security groups referenced by this rule."""
         source_rule = self._source_session.network.get_security_group_rule(resource_id)
         if not source_rule:
             raise exception.NotFound(f"Security Group Rule not found: {resource_id}")
-        resources = [
+
+        resources: list[base.Resource] = []
+        self._report_identity_dependencies(resources, project_id=source_rule.project_id)
+        resources.append(
             base.Resource(
                 resource_type="security-group", source_id=source_rule.security_group_id
             )
-        ]
+        )
         if source_rule.remote_group_id:
             resources.append(
                 base.Resource(
@@ -105,6 +111,12 @@ class SecurityGroupRuleHandler(base.BaseMigrationHandler):
                 migrated_associated_resources,
             )
 
+        identity_kwargs = self._get_identity_build_kwargs(
+            migrated_associated_resources,
+            source_project_id=source_sg_rule.project_id,
+        )
+        kwargs.update(identity_kwargs)
+
         try:
             destination_sg_rule = (
                 self._destination_session.network.create_security_group_rule(
@@ -143,8 +155,8 @@ class SecurityGroupRuleHandler(base.BaseMigrationHandler):
         self._validate_resource_filters(resource_filters)
 
         query_filters = {}
-        if "owner_id" in resource_filters:
-            query_filters["project_id"] = resource_filters["owner_id"]
+        if "project_id" in resource_filters:
+            query_filters["project_id"] = resource_filters["project_id"]
 
         resource_ids = []
         for sg_rule in self._source_session.network.security_group_rules(

@@ -376,19 +376,52 @@ $ sunbeam-migrate show fd91c637-7b91-4fb6-9bd6-afb84c9d79a1
 +-------------------+--------------------------------------+
 ```
 
-## TODOs
+## Multi-tenant mode
 
-* Add new resource handlers.
+`sunbeam-migrate` allows migrating resources owned by other projects (tenants)
+and preserving the owner information. This requires admin privileges.
+
+The `multitenant_mode` setting is enabled by default. As a result, the owner
+project and user resources are reported as dependencies and migrated
+automatically.
+
+Not all Openstack services allow specifying a different owner when creating
+resources. As such, `sunbeam-migrate` needs to use project scoped sessions,
+assigning itself as a member of the migrated tenant.
+
+At the moment, this feature does not support Nova keypairs and Barbican secrets.
+The keypairs will be skipped when migrating instances if the multi-tenant mode
+is enabled. However, the keypair information shouldn't be mandatory for
+already provisioned instances.
+
+
+## Potential future improvements
+
+* Add new resource migration handlers.
 * Implement manager unit tests
 * Instead of dry runs, have migration plans similar to Terraform plans. The user could then
   see the resources that are going to be migrated, trigger the migration plan and then check
   the migration status for the specified plan.
   The resource dependencies could be modeled through a tree.
-* Finalize the implementation for cross-tenant migrations and add integration tests.
-  * we can add a "multitenant_mode" option.
-  * if enabled, projects and users may be reported as associated resources.
-* Add batch migration tests for every supported resource type.
-* Replace "owner-id" filters with "project-id" and/or "user-id".
+* Propagate the dry run to linked resources.
+* Allow skipping properties that may cause conflicts on the destination cloud:
+  * net segmentation id
+  * mac addresses
+  * instance fixed IPs
+  * floating IPs
+    * can be skipped completely or just the actual address
+  * router IP
+* Attach floating ips to instance ports
+* Cross-tenant keypair and secret migrations
+  * The keypairs do not have an unique ID. Cross-tenant requests must include
+    the keypair name and the project/user ID, even get/list.
+  * We'd need to include the owner information along with the resource id in:
+    * `get_source_resource_ids` -> may return a `Resource` object
+    * `perform_individual_migration`
+    * `get_associated_resources`
+    * The migration `start` command
+  * We have a similar situation with Barbican secrets and secret containers,
+    where we aren't normally allowed to retrieve secrets owned by other projects.
 
 ## Functional tests
 
@@ -432,3 +465,7 @@ Use the `-k` parameter to specify which test(s) to run:
 ```
 tox -e integration -- -k test_migrate_image_and_cleanup
 ```
+
+A set of temporary credentials will be created for every test module. If multi-tenant
+mode is enabled, the tests will use one tenant for creating the test resources
+(the resource owner) and a separate tenant for initiating the migration (called "requester").

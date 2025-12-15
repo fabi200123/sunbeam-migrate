@@ -60,13 +60,21 @@ def test_migrate_network_and_cleanup(
     test_credentials,
     test_source_session,
     test_destination_session,
+    test_owner_source_project,
 ):
     network = neutron_utils.create_test_network(test_source_session)
     request.addfinalizer(lambda: test_source_session.network.delete_network(network.id))
 
     test_utils.call_migrate(
         test_config_path,
-        ["start", "--resource-type=network", "--cleanup-source", network.id],
+        [
+            "start-batch",
+            "--resource-type=network",
+            "--include-dependencies",
+            "--cleanup-source",
+            "--filter",
+            f"project-id:{test_owner_source_project.id}",
+        ],
     )
 
     dest_network = test_destination_session.network.find_network(network.name)
@@ -88,6 +96,7 @@ def test_migrate_network_with_members(
     test_credentials,
     test_source_session,
     test_destination_session,
+    test_owner_source_project,
 ):
     network = neutron_utils.create_test_network(test_source_session)
     request.addfinalizer(lambda: test_source_session.network.delete_network(network.id))
@@ -98,10 +107,12 @@ def test_migrate_network_with_members(
     test_utils.call_migrate(
         test_config_path,
         [
-            "start",
+            "start-batch",
             "--resource-type=network",
+            "--include-dependencies",
             "--include-members",
-            network.id,
+            "--filter",
+            f"project-id:{test_owner_source_project.id}",
         ],
     )
 
@@ -125,6 +136,7 @@ def test_migrate_subnet_and_cleanup(
     test_credentials,
     test_source_session,
     test_destination_session,
+    test_owner_source_project,
 ):
     network = neutron_utils.create_test_network(test_source_session)
     request.addfinalizer(lambda: test_source_session.network.delete_network(network.id))
@@ -135,11 +147,12 @@ def test_migrate_subnet_and_cleanup(
     test_utils.call_migrate(
         test_config_path,
         [
-            "start",
+            "start-batch",
             "--resource-type=subnet",
-            "--cleanup-source",
             "--include-dependencies",
-            subnet.id,
+            "--cleanup-source",
+            "--filter",
+            f"project-id:{test_owner_source_project.id}",
         ],
     )
 

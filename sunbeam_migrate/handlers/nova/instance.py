@@ -21,11 +21,11 @@ class InstanceHandler(base.BaseMigrationHandler):
 
     def get_supported_resource_filters(self) -> list[str]:
         """Return supported batch filters."""
-        return ["owner_id"]
+        return ["project_id"]
 
     def get_associated_resource_types(self) -> list[str]:
         """Get a list of associated resource types."""
-        return [
+        types = [
             "image",
             "volume",
             "flavor",
@@ -33,6 +33,9 @@ class InstanceHandler(base.BaseMigrationHandler):
             "network",
             "port",
         ]
+        if CONF.multitenant_mode:
+            types.append("project")
+        return types
 
     def get_associated_resources(self, resource_id: str) -> list[base.Resource]:
         """Return the source resources this instance depends on."""
@@ -40,7 +43,10 @@ class InstanceHandler(base.BaseMigrationHandler):
         if not source_instance:
             raise exception.NotFound(f"Instance not found: {resource_id}")
 
-        associated_resources = []
+        associated_resources: list[base.Resource] = []
+        self._report_identity_dependencies(
+            associated_resources, project_id=source_instance.project_id
+        )
 
         # Ports attached to the instance
         #
@@ -69,13 +75,16 @@ class InstanceHandler(base.BaseMigrationHandler):
         )
 
         # Keypair
-        if source_instance.key_name:
-            keypair = self._source_session.compute.find_keypair(
-                source_instance.key_name, ignore_missing=False
-            )
-            associated_resources.append(
-                base.Resource(resource_type="keypair", source_id=keypair.id)
-            )
+        if CONF.multitenant_mode:
+            LOG.warning("Keypair migration is not supported in multi-tenant mode.")
+        else:
+            if source_instance.key_name:
+                keypair = self._source_session.compute.find_keypair(
+                    source_instance.key_name, ignore_missing=False
+                )
+                associated_resources.append(
+                    base.Resource(resource_type="keypair", source_id=keypair.id)
+                )
 
         # Image
         #
@@ -107,12 +116,12 @@ class InstanceHandler(base.BaseMigrationHandler):
 
         return associated_resources
 
-    def _upload_instance_to_image(self, source_instance):
+    def _upload_instance_to_image(self, owner_source_session, source_instance):
         """Upload instance to Glance image."""
         rand = int.from_bytes(os.urandom(4))
         image_name = f"instmigr-{source_instance.id}-{rand}"
         LOG.info("Uploading instance %s to image: %s", source_instance.id, image_name)
-        image = self._source_session.compute.create_server_image(
+        image = owner_source_session.compute.create_server_image(
             source_instance, image_name
         )
         LOG.info("Waiting for instance upload to complete. Image id: %s", image.id)
@@ -179,17 +188,39 @@ class InstanceHandler(base.BaseMigrationHandler):
             source_instance.flavor.id
         )
 
+        identity_kwargs = self._get_identity_build_kwargs(
+            migrated_associated_resources,
+            source_project_id=source_instance.project_id,
+        )
+        if CONF.multitenant_mode:
+            owner_source_session = self._owner_scoped_session(
+                self._source_session,
+                [CONF.member_role_name],
+                source_instance.project_id,
+            )
+            owner_destination_session = self._owner_scoped_session(
+                self._destination_session,
+                [CONF.member_role_name],
+                identity_kwargs["project_id"],
+            )
+        else:
+            owner_source_session = self._source_session
+            owner_destination_session = self._destination_session
+
         destination_image_id: str | None = None
         source_image: Any = None
 
         # Handle image-booted instances: upload to Glance and migrate image
         if source_instance.image and source_instance.image.get("id"):
-            source_image = self._upload_instance_to_image(source_instance)
+            source_image = self._upload_instance_to_image(
+                owner_source_session, source_instance
+            )
             try:
                 image_migration = self.manager.perform_individual_migration(
                     resource_type="image",
                     resource_id=source_image.id,
                     cleanup_source=True,
+                    include_dependencies=True,
                 )
                 destination_image_id = image_migration.destination_id
             except Exception as ex:
@@ -211,7 +242,7 @@ class InstanceHandler(base.BaseMigrationHandler):
             )
 
             # Create instance on destination
-            destination_instance = self._destination_session.compute.create_server(
+            destination_instance = owner_destination_session.compute.create_server(
                 **instance_kwargs
             )
 
@@ -264,7 +295,7 @@ class InstanceHandler(base.BaseMigrationHandler):
         kwargs["flavor_id"] = dest_flavor_id
 
         # Keypair
-        if source_instance.key_name:
+        if source_instance.key_name and not CONF.multitenant_mode:
             dest_keypair_id = self._get_associated_resource_destination_id(
                 "keypair",
                 source_instance.key_name,  # Keypairs use name as ID
@@ -319,9 +350,10 @@ class InstanceHandler(base.BaseMigrationHandler):
         """Return all source instance ids."""
         self._validate_resource_filters(resource_filters)
 
-        query_filters = {}
-        if "owner_id" in resource_filters:
-            query_filters["project_id"] = resource_filters["owner_id"]
+        query_filters: dict[str, Any] = {}
+        if "project_id" in resource_filters:
+            query_filters["project_id"] = resource_filters["project_id"]
+            query_filters["all_tenants"] = True
 
         resource_ids: list[str] = []
         for instance in self._source_session.compute.servers(**query_filters):
