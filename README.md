@@ -182,6 +182,80 @@ The migration process:
 6. **Creates members** in each pool with their subnet mappings
 
 
+## Migrating DNS zones and records
+
+Designate zones can be migrated with `--resource-type=dns-zone`. The handler recreates the DNS zone with all of its recordsets on the destination.
+
+```
+$ sunbeam-migrate start --resource-type=dns-zone 68cfff5c-02dd-44b6-a436-b87d82f2a1d6
+2025-12-15 15:42:58,313 INFO Initiating dns-zone migration, resource id: 68cfff5c-02dd-44b6-a436-b87d82f2a1d6
+2025-12-15 15:43:11,744 INFO Creating zone test.example.com. on destination
+2025-12-15 15:43:12,883 INFO Created zone test.example.com. on destination (id: d8e32ae7-1363-4900-98a1-abb0409884e4)
+2025-12-15 15:43:12,884 INFO Copying recordsets from source zone 68cfff5c-02dd-44b6-a436-b87d82f2a1d6 to destination zone d8e32ae7-1363-4900-98a1-abb0409884e4
+2025-12-15 15:43:13,219 INFO Copying recordset: note.test.example.com. (TXT)
+2025-12-15 15:43:14,656 INFO Created recordset: note.test.example.com. (TXT)
+2025-12-15 15:43:14,688 INFO Successfully migrated dns-zone resource, destination id: d8e32ae7-1363-4900-98a1-abb0409884e4
+```
+
+
+## Registering external migrations
+
+`sunbeam-migrate` normally creates exact copies of the migrated resources. This isn't always
+desired.
+
+Let's take volume types for example. The extra specs may contain backend specific properties
+that are not applicable on the destination cloud (e.g. backend name, pool name or other
+storage backend settings).
+
+Instead, users can recreate the volume type manually on the destination cloud and then use
+the `register-external` command to register the migration. Subsequent volume migrations
+will automatically use the manually created volume type.
+
+```
+$ sunbeam-migrate register-external --resource-type volume-type f104d538-a2f0-4897-92ea-9887bfb1c926 491481cd-d9d0-4639-afe4-d5f07223f4db
+
+$ sunbeam-migrate show fd91c637-7b91-4fb6-9bd6-afb84c9d79a1
++----------------------------------------------------------+
+|                        Migration                         |
++-------------------+--------------------------------------+
+|       Field       |                Value                 |
++-------------------+--------------------------------------+
+|        Uuid       | fd91c637-7b91-4fb6-9bd6-afb84c9d79a1 |
+|     Created at    |      2025-12-02 10:44:22.062347      |
+|     Updated at    |                 None                 |
+|      Service      |                cinder                |
+|   Resource type   |             volume-type              |
+|    Source cloud   |             source-admin             |
+| Destination cloud |          destination-admin           |
+|     Source id     | f104d538-a2f0-4897-92ea-9887bfb1c926 |
+|   Destination id  | 491481cd-d9d0-4639-afe4-d5f07223f4db |
+|       Status      |              completed               |
+|   Error message   |                 None                 |
+|      Archived     |                False                 |
+|   Source removed  |                False                 |
+|      External     |                 True                 |
++-------------------+--------------------------------------+
+```
+
+## Multi-tenant mode
+
+`sunbeam-migrate` allows migrating resources owned by other projects (tenants)
+and preserving the owner information. This requires admin privileges.
+
+The `multitenant_mode` setting is enabled by default. As a result, the owner
+project and user resources are reported as dependencies and migrated
+automatically.
+
+Not all Openstack services allow specifying a different owner when creating
+resources. As such, `sunbeam-migrate` needs to use project scoped sessions,
+assigning itself as a member of the migrated tenant.
+
+At the moment, this feature does not support Nova keypairs and Barbican secrets.
+The keypairs will be skipped when migrating instances if the multi-tenant mode
+is enabled. However, the keypair information shouldn't be mandatory for
+already provisioned instances.
+
+
 ## Potential future improvements
 
 * Add new resource migration handlers.
