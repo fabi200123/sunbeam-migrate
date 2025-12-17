@@ -77,10 +77,12 @@ def _check_migrated_recordset(source_recordset, destination_recordset):
 
 def test_migrate_zone_and_cleanup(
     request,
+    test_config,
     test_config_path,
     test_credentials,
     test_source_session,
     test_destination_session,
+    test_owner_source_project,
 ):
     """Test zone migration with cleanup-source flag."""
     zone = _create_test_zone(test_source_session)
@@ -91,11 +93,12 @@ def test_migrate_zone_and_cleanup(
     test_utils.call_migrate(
         test_config_path,
         [
-            "start",
+            "start-batch",
             "--resource-type=dns-zone",
             "--include-dependencies",
             "--cleanup-source",
-            zone.id,
+            "--filter",
+            f"project-id:{test_owner_source_project.id}",
         ],
     )
 
@@ -120,10 +123,12 @@ def test_migrate_zone_and_cleanup(
 
 def test_migrate_zone_with_recordsets(
     request,
+    test_config,
     test_config_path,
     test_credentials,
     test_source_session,
     test_destination_session,
+    test_owner_source_project,
 ):
     """Test zone migration with multiple recordsets."""
     zone = _create_test_zone(test_source_session)
@@ -137,7 +142,13 @@ def test_migrate_zone_with_recordsets(
 
     test_utils.call_migrate(
         test_config_path,
-        ["start", "--resource-type=dns-zone", zone.id],
+        [
+            "start-batch",
+            "--resource-type=dns-zone",
+            "--include-dependencies",
+            "--filter",
+            f"project-id:{test_owner_source_project.id}",
+        ],
     )
 
     dest_zone = test_destination_session.dns.find_zone(zone.name)
@@ -184,10 +195,12 @@ def test_migrate_zone_with_recordsets(
 
 def test_migrate_zone_batch_by_project(
     request,
+    test_config,
     test_config_path,
     test_credentials,
     test_source_session,
     test_destination_session,
+    test_owner_source_project,
 ):
     """Test batch migration filtering by project/owner."""
     zone = _create_test_zone(test_source_session)
@@ -197,17 +210,15 @@ def test_migrate_zone_batch_by_project(
 
     _create_test_recordset(test_source_session, zone, record_type="A")
 
-    # Get the project ID from the zone
-    project_id = zone.project_id
-
     # Migrate all zones in the project
     test_utils.call_migrate(
         test_config_path,
         [
             "start-batch",
             "--resource-type=dns-zone",
+            "--include-dependencies",
             "--filter",
-            f"project_id:{project_id}",
+            f"project-id:{test_owner_source_project.id}",
             "--cleanup-source",
         ],
     )
